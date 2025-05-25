@@ -8,7 +8,7 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o /app/dproxy-server
+RUN GOOS=linux go build -o /app/dproxy-server
 
 # Deploy the application binary into a lean image
 FROM alpine:latest AS runtime
