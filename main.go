@@ -23,7 +23,6 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -32,9 +31,11 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
-	"sync"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
@@ -44,17 +45,8 @@ import (
 var logger = slog.Default().WithGroup("main")
 var db *gorm.DB
 
-type CLIArgs struct {
-	DbPath   string
-	KeyPath  string
-	Address  string
-	HttpPort uint16
-	TcpPort  uint16
-	LogLevel slog.Level
-}
-
 func main() {
-	args, err := parseArgs()
+	args, err := ParseArgs()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -76,84 +68,270 @@ func main() {
 		log.Fatal(err)
 	}
 
-	wg := sync.WaitGroup{}
-	wg.Add(2)
-	go StartHTTPServer(&server, args.Address, args.HttpPort, &wg)
-	go StartDProxyServer(&server, args.Address, args.TcpPort, &wg)
+	sc := make(chan os.Signal, 1)
+	signal.Notify(sc, os.Interrupt)
 
-	wg.Wait()
+	go StartHTTPServer(&server, args.Address, args.HttpPort)
+	go StartDProxyServer(&server, args.Address, args.TcpPort)
+	go StartHeartbeatTicker(&server)
+
+	<-sc
+	logger.Info("Shutting down")
 }
 
-func parseArgs() (*CLIArgs, error) {
-	var args = &CLIArgs{}
-	flag.StringVar(&args.DbPath, "db-path", "./db/dproxy.db", "Path to the database file")
-	flag.StringVar(&args.KeyPath, "key-path", "./keys/private.pem", "Path to the private key file")
-	flag.StringVar(&args.Address, "address", "0.0.0.0", "Bind address to listen for connections")
-	httpPort := flag.Uint("http-port", 8080, "Port to listen for HTTP connections")
-	tcpPort := flag.Uint("tcp-port", 8081, "Port to listen for TCP (DProxy Client) connections")
-	logLevelStr := flag.String("log-level", "info", "Log level")
-
-	flag.Parse()
-	if *httpPort <= 0 || *httpPort > 65535 {
-		return nil, fmt.Errorf("invalid http port")
+func getServerPublicKey(server *dproxy.Server, w http.ResponseWriter, _ *http.Request) {
+	derPublicKey, err := x509.MarshalPKIXPublicKey(server.PrivateKey.PublicKey())
+	if err != nil {
+		logger.Error("Error when encoding PEM block", "error", err)
+		return
 	}
 
-	if *tcpPort <= 0 || *tcpPort > 65535 {
-		return nil, fmt.Errorf("invalid dproxy port")
+	w.Header().Set("Content-Type", "application/x-pem-file; charset=utf-8")
+	err = pem.Encode(
+		w, &pem.Block{
+			Type:  "PUBLIC KEY",
+			Bytes: derPublicKey,
+		},
+	)
+	if err != nil {
+		logger.Error("Error when encoding PEM block", "error", err)
+		return
 	}
-
-	args.HttpPort = uint16(*httpPort)
-	args.TcpPort = uint16(*tcpPort)
-
-	switch *logLevelStr {
-	case "debug", "DEBUG":
-		args.LogLevel = slog.LevelDebug
-		break
-	case "info", "INFO":
-		args.LogLevel = slog.LevelInfo
-		break
-	case "warn", "WARN":
-		args.LogLevel = slog.LevelWarn
-		break
-	case "error", "ERROR":
-		args.LogLevel = slog.LevelError
-		break
-	default:
-		return nil, fmt.Errorf("invalid log level")
-	}
-
-	return args, nil
 }
 
-func StartHTTPServer(server *dproxy.Server, bindAddress string, port uint16, wg *sync.WaitGroup) {
-	defer wg.Done()
+func uploadClientPublicKey(server *dproxy.Server, w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Authorization") == "" ||
+		!strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
 
+	token, err := jwt.Parse(
+		r.Header.Get("Authorization")[7:], func(token *jwt.Token) (interface{}, error) {
+			if _, ok := token.Method.(*jwt.SigningMethodECDSA); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			}
+
+			return server.PrivateKey, nil
+		},
+	)
+
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	clientId, err := token.Claims.GetSubject()
+	if err != nil {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	if r.Header.Get("Content-Type") != "application/x-pem-file" {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
+
+	clientDb, err := GetClientFromId(db, clientId)
+	if err != nil {
+		logger.Error("Error when getting client", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	if clientDb == nil {
+		logger.Warn("Client not found", "username", clientId)
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	if !clientDb.Enabled {
+		logger.Warn("Client not enabled", "username", clientId)
+		w.WriteHeader(http.StatusForbidden)
+		return
+	}
+
+	derPublicKey := make([]byte, 0)
+	_, err = r.Body.Read(derPublicKey)
+	if err != nil {
+		logger.Error("Error when reading request body", "error", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	err = UploadClientPublicKey(db, clientDb, derPublicKey)
+	if err != nil {
+		logger.Error("Error when uploading client public key", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+	}
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func handleHttpsTunnel(server *dproxy.Server, client *dproxy.Client, w http.ResponseWriter, r *http.Request) error {
+	// HTTPS Proxy
+	uri, err := url.Parse(fmt.Sprintf("https:%s", r.URL.String()))
+	if err != nil {
+		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
+		w.WriteHeader(http.StatusBadRequest)
+		return err
+	}
+
+	destination := uri.Hostname()
+	port := dproxy.IntOr(uri.Port(), 443)
+	connectionId, err := dproxy.ConnectTo(client, destination, uint16(port), 30)
+	if err != nil {
+		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
+		w.WriteHeader(http.StatusGatewayTimeout)
+		return err
+	}
+
+	w.WriteHeader(http.StatusOK)
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
+		w.WriteHeader(http.StatusInternalServerError)
+		return err
+	}
+
+	clientConn, _, err := hj.Hijack()
+	if err != nil {
+		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
+		w.WriteHeader(http.StatusInternalServerError)
+		return err
+	}
+
+	logger.Debug("Tunnel established")
+	dproxy.SetConnectionStream(client, connectionId, &clientConn)
+	go func() {
+		for {
+			if !dproxy.IsClientConnected(server, client.Id) {
+				break
+			}
+
+			buffer := make([]byte, 32768)
+			bytesRead, err := clientConn.Read(buffer)
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				logger.Debug("HTTP Client disconnected", "username", client.Id)
+				break
+			} else if err != nil {
+				logger.Error("Error when reading the HTTP connection", "error", err)
+				break
+			}
+
+			err = dproxy.WriteData(client, connectionId, buffer[:bytesRead])
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				logger.Debug("HTTP Client disconnected", "username", client.Id)
+				break
+			}
+		}
+
+		err := dproxy.DisconnectFrom(client, connectionId)
+		if err != nil {
+			logger.Error("Error when disconnecting from destination", "error", err)
+		}
+
+		err = clientConn.Close()
+		if err != nil {
+			logger.Error("Error when closing http connection", "error", err)
+		}
+	}()
+
+	return nil
+}
+
+func handleHttpTunnel(server *dproxy.Server, client *dproxy.Client, w http.ResponseWriter, r *http.Request) error {
+	// HTTP Proxy
+	uri, err := url.Parse(r.URL.String())
+	if err != nil {
+		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
+		w.WriteHeader(http.StatusBadRequest)
+		return err
+	}
+
+	destination := uri.Hostname()
+	port := dproxy.IntOr(uri.Port(), 80)
+	path := uri.Path
+	connectionId, err := dproxy.ConnectTo(client, destination, uint16(port), 30)
+	if err != nil {
+		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
+		w.WriteHeader(http.StatusGatewayTimeout)
+		return err
+	}
+
+	err = dproxy.WriteData(client, connectionId, []byte(MountHttpData(r, path)))
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return err
+	}
+
+	hj, ok := w.(http.Hijacker)
+	if !ok {
+		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
+		w.WriteHeader(http.StatusInternalServerError)
+		return err
+	}
+
+	clientConn, _, err := hj.Hijack()
+	if err != nil {
+		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
+		w.WriteHeader(http.StatusInternalServerError)
+		return err
+	}
+
+	logger.Debug("Tunnel established")
+	dproxy.SetConnectionStream(client, connectionId, &clientConn)
+	go func() {
+		for {
+			if !dproxy.IsClientConnected(server, client.Id) {
+				break
+			}
+
+			buffer := make([]byte, 32768)
+			bytesRead, err := clientConn.Read(buffer)
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				logger.Debug("HTTP Client disconnected", "username", client.Id)
+				break
+			} else if err != nil {
+				logger.Error("Error when reading the HTTP connection", "error", err)
+				break
+			}
+
+			err = dproxy.WriteData(client, connectionId, buffer[:bytesRead])
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				logger.Debug("HTTP Client disconnected", "username", client.Id)
+				break
+			}
+		}
+
+		err := dproxy.DisconnectFrom(client, connectionId)
+		if err != nil {
+			logger.Error("Error when disconnecting from destination", "error", err)
+		}
+
+		err = clientConn.Close()
+		if err != nil {
+			logger.Error("Error when closing connection", "error", err)
+		}
+	}()
+
+	return nil
+}
+
+func StartHTTPServer(server *dproxy.Server, bindAddress string, port uint16) {
 	proxyHandler := http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == "GET" && r.URL.Path == "/key-exchange" {
-				derPublicKey, err := x509.MarshalPKIXPublicKey(server.PrivateKey.PublicKey())
-				if err != nil {
-					logger.Error("Error when encoding PEM block", "error", err)
-					return
-				}
-
-				w.Header().Set("Content-Type", "application/x-pem-file; charset=utf-8")
-				err = pem.Encode(
-					w, &pem.Block{
-						Type:  "PUBLIC KEY",
-						Bytes: derPublicKey,
-					},
-				)
-				if err != nil {
-					logger.Error("Error when encoding PEM block", "error", err)
-					return
-				}
+				getServerPublicKey(server, w, r)
+				return
+			} else if r.Method == "POST" && r.URL.Path == "/key-exchange" {
+				uploadClientPublicKey(server, w, r)
+				return
 			}
 
-			if r.Method != "CONNECT" && !strings.HasPrefix(
-				r.URL.String(),
-				"http://",
-			) && !strings.HasPrefix(r.URL.String(), "ws://") {
+			if r.Method != "CONNECT" &&
+				!strings.HasPrefix(r.URL.String(), "http://") &&
+				!strings.HasPrefix(r.URL.String(), "ws://") {
 				return
 			}
 
@@ -193,165 +371,31 @@ func StartHTTPServer(server *dproxy.Server, bindAddress string, port uint16, wg 
 			client := dproxy.GetClient(server, username)
 
 			if r.Method == "CONNECT" {
-				// HTTPS Proxy
-				uri, err := url.Parse(fmt.Sprintf("https:%s", r.URL.String()))
+				err = handleHttpsTunnel(server, client, w, r)
 				if err != nil {
-					logger.Error("Error when parsing URL", "error", err)
-					w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
-					w.WriteHeader(http.StatusBadRequest)
-					return
+					logger.Error("Error when handling HTTPS tunnel", "error", err)
 				}
-
-				destination := uri.Hostname()
-				port := dproxy.IntOr(uri.Port(), 443)
-				connectionId, err := dproxy.ConnectTo(client, destination, uint16(port), 30)
-				if err != nil {
-					logger.Error("Error when connecting to destination", "error", err)
-					w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
-					w.WriteHeader(http.StatusGatewayTimeout)
-					return
-				}
-
-				w.WriteHeader(http.StatusOK)
-				hj, ok := w.(http.Hijacker)
-				if !ok {
-					logger.Error("HTTP Server doesn't support hijacking connection")
-					w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-
-				clientConn, _, err := hj.Hijack()
-				if err != nil {
-					logger.Error("HTTP Hijacking failed")
-					w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-
-				logger.Debug("Tunnel established")
-				dproxy.SetConnectionStream(client, connectionId, &clientConn)
-				go func() {
-					for {
-						if !dproxy.IsClientConnected(server, client.Id) {
-							break
-						}
-
-						buffer := make([]byte, 32768)
-						bytesRead, err := clientConn.Read(buffer)
-						if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-							logger.Debug("HTTP Client disconnected", "username", username)
-							break
-						} else if err != nil {
-							logger.Error("Error when reading the HTTP connection", "error", err)
-							break
-						}
-
-						err = dproxy.WriteData(client, connectionId, buffer[:bytesRead])
-						if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-							logger.Debug("HTTP Client disconnected", "username", username)
-							break
-						}
-					}
-
-					err := dproxy.DisconnectFrom(client, connectionId)
-					if err != nil {
-						logger.Error("Error when disconnecting from destination", "error", err)
-					}
-
-					err = clientConn.Close()
-					if err != nil {
-						logger.Error("Error when closing http connection", "error", err)
-					}
-				}()
 			} else {
-				// HTTP Proxy
-				uri, err := url.Parse(r.URL.String())
+				err = handleHttpTunnel(server, client, w, r)
 				if err != nil {
-					logger.Error("Error when parsing URL", "error", err)
-					w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
-					w.WriteHeader(http.StatusBadRequest)
+					logger.Error("Error when handling HTTP tunnel", "error", err)
 				}
-
-				destination := uri.Hostname()
-				port := dproxy.IntOr(uri.Port(), 80)
-				path := uri.Path
-				connectionId, err := dproxy.ConnectTo(client, destination, uint16(port), 30)
-				if err != nil {
-					logger.Error("Error when connecting to destination", "error", err)
-				}
-
-				err = dproxy.WriteData(client, connectionId, []byte(mountHttpData(r, path)))
-				if err != nil {
-					logger.Error("Error when writing data to destination", "error", err)
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-
-				hj, ok := w.(http.Hijacker)
-				if !ok {
-					logger.Error("HTTP Server doesn't support hijacking connection")
-					w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-
-				clientConn, _, err := hj.Hijack()
-				if err != nil {
-					logger.Error("HTTP Hijacking failed")
-					w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
-					w.WriteHeader(http.StatusInternalServerError)
-					return
-				}
-
-				logger.Debug("Tunnel established")
-				dproxy.SetConnectionStream(client, connectionId, &clientConn)
-				go func() {
-					for {
-						if !dproxy.IsClientConnected(server, client.Id) {
-							break
-						}
-
-						buffer := make([]byte, 32768)
-						bytesRead, err := clientConn.Read(buffer)
-						if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-							logger.Debug("HTTP Client disconnected", "username", username)
-							break
-						} else if err != nil {
-							logger.Error("Error when reading the HTTP connection", "error", err)
-							break
-						}
-
-						err = dproxy.WriteData(client, connectionId, buffer[:bytesRead])
-						if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-							logger.Debug("HTTP Client disconnected", "username", username)
-							break
-						}
-					}
-
-					err := dproxy.DisconnectFrom(client, connectionId)
-					if err != nil {
-						logger.Error("Error when disconnecting from destination", "error", err)
-					}
-
-					err = clientConn.Close()
-					if err != nil {
-						logger.Error("Error when closing connection", "error", err)
-					}
-				}()
 			}
 		},
 	)
 
-	if err := http.ListenAndServe(fmt.Sprintf("%s:%d", bindAddress, port), proxyHandler); err != nil {
+	httpServer := &http.Server{
+		Addr:    fmt.Sprintf("%s:%d", bindAddress, port),
+		Handler: proxyHandler,
+	}
+
+	if err := httpServer.ListenAndServe(); err != nil {
 		logger.Error("Error when starting HTTP server", "error", err)
 		return
 	}
 }
 
-func StartDProxyServer(server *dproxy.Server, bindAddress string, port uint16, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func StartDProxyServer(server *dproxy.Server, bindAddress string, port uint16) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", bindAddress, port))
 	if err != nil {
 		logger.Error("Error when listening for connections", "error", err)
@@ -403,6 +447,11 @@ func handleClient(conn net.Conn, server *dproxy.Server) {
 		return
 	}
 
+	if publicKeyDb == nil {
+		logger.Debug("Client not found", "username", clientPublicKey)
+		return
+	}
+
 	if !publicKeyDb.Client.Enabled {
 		logger.Debug("Client not enabled", "username", publicKeyDb.Client.Id)
 		return
@@ -450,20 +499,15 @@ func handleClient(conn net.Conn, server *dproxy.Server) {
 	}
 }
 
-func mountHttpData(r *http.Request, path string) string {
-	data := fmt.Sprintf("%s %s HTTP/1.1\r\n", r.Method, path)
-	for k, v := range r.Header {
-		if k == "Proxy-Authorization" || k == "Proxy-Connection" {
-			continue
-		}
+func StartHeartbeatTicker(server *dproxy.Server) {
+	ticker := time.NewTicker(time.Second * 10)
+	defer ticker.Stop()
 
-		if k == "Connection" {
-			v = []string{"close"}
+	for {
+		select {
+		case <-ticker.C:
+			logger.Debug("Sending heartbeat to all clients")
+			dproxy.SendHeartbeatToClients(server)
 		}
-
-		data += fmt.Sprintf("%s: %s\r\n", k, strings.Join(v, ", "))
 	}
-
-	data += "\r\n"
-	return data
 }

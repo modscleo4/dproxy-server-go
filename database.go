@@ -54,6 +54,10 @@ func GetClientFromPublicKey(db *gorm.DB, derPublicKey []byte) (*PublicKey, error
 	publicKey.Client = &Client{}
 	res := db.Where(&PublicKey{Key: derPublicKey}).First(publicKey)
 	if res.Error != nil {
+		if res.Error.Error() == "record not found" {
+			return nil, nil
+		}
+
 		return nil, res.Error
 	}
 
@@ -69,8 +73,22 @@ func GetClientFromId(db *gorm.DB, id string) (*Client, error) {
 	var client = &Client{}
 	res := db.Where(&Client{Id: id}).First(client)
 	if res.Error != nil {
+		if res.Error.Error() == "record not found" {
+			return nil, nil
+		}
+
 		return nil, res.Error
 	}
 
 	return client, nil
+}
+
+func UploadClientPublicKey(db *gorm.DB, client *Client, derPublicKey []byte) error {
+	var publicKey = &PublicKey{Key: derPublicKey, ClientId: client.Id, Enabled: true}
+	res := db.Create(publicKey)
+	if res.Error != nil {
+		return res.Error
+	}
+
+	return nil
 }

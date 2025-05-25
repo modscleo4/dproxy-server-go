@@ -34,6 +34,7 @@ import (
 
 type Server struct {
 	PrivateKey *ecdh.PrivateKey
+	lock       sync.RWMutex
 	clients    map[string]*Client
 }
 
@@ -207,7 +208,9 @@ func AcceptConnection(server *Server, client *Client) error {
 	client.nextConnId = 1
 	client.connections = make(map[uint32]*net.Conn)
 	client.connEvents = make(map[uint32]chan bool)
+	server.lock.Lock()
 	server.clients[client.Id] = client
+	server.lock.Unlock()
 
 	return nil
 }
@@ -279,6 +282,11 @@ func ReadClientData(client *Client) error {
 		}
 	case HEARTBEAT:
 		_, err := ReadHeartbeat(conn, header)
+		if err != nil {
+			return err
+		}
+
+		_, err = SendHeartbeatResponse(conn, time.Now().UTC().UnixMilli())
 		if err != nil {
 			return err
 		}
@@ -389,4 +397,19 @@ func SetConnectionStream(client *Client, connectionId uint32, conn *net.Conn) {
 	client.lock.Lock()
 	client.connections[connectionId] = conn
 	client.lock.Unlock()
+}
+
+func SendHeartbeatToClients(server *Server) {
+	if len(server.clients) == 0 {
+		return
+	}
+
+	server.lock.RLock()
+	for _, client := range server.clients {
+		_, err := SendHeartbeat(*client.Conn, time.Now().UTC().UnixMilli())
+		if err != nil {
+			logger.Error("Failed to send heartbeat to client", "username", client.Id, "error", err)
+		}
+	}
+	server.lock.RUnlock()
 }
