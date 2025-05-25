@@ -1,5 +1,6 @@
-# Build the application from source
-FROM golang:1.24 AS build
+FROM golang:1.24-alpine AS build
+
+RUN apk add --no-cache gcc g++
 
 WORKDIR /app
 
@@ -8,21 +9,21 @@ RUN go mod download
 
 COPY . .
 
-RUN GOOS=linux go build -o /app/dproxy-server
+RUN CGO_ENABLED=1 go build -o /app/dproxy-server
 
-# Deploy the application binary into a lean image
-FROM alpine:latest AS runtime
+FROM alpine:latest
 
 WORKDIR /app
 
+VOLUME /app/db
 VOLUME /app/keys
 
 EXPOSE 8080
 
-COPY --from=build /app/dproxy-server /bin/dproxy-server
-
 RUN addgroup -S user && adduser -S user -G user
 
 USER user
+
+COPY --from=build /app/dproxy-server /bin/
 
 ENTRYPOINT ["/bin/dproxy-server"]

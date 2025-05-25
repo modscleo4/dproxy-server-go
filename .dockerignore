@@ -1,4 +1,10 @@
 .github/
+db/
 keys/
 
+Dockerfile
+.dockerignore
+.gitignore
+README.md
+LICENSE
 *.db
