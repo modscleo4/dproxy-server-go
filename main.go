@@ -488,15 +488,16 @@ func handleClient(conn net.Conn, server *dproxy.Server) {
 	for {
 		err := dproxy.ReadClientData(&client)
 		if err != nil {
-			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				logger.Info("Client disconnected", "username", publicKeyDb.Client.Id)
-				dproxy.DisconnectClient(server, publicKeyDb.Client.Id)
-				return
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.ErrClosedPipe) {
+				break
 			}
 
 			logger.Error("Error when reading client data", "error", err)
 		}
 	}
+
+	logger.Info("Client disconnected", "username", publicKeyDb.Client.Id)
+	dproxy.DisconnectClient(server, publicKeyDb.Client.Id)
 }
 
 func StartHeartbeatTicker(server *dproxy.Server) {

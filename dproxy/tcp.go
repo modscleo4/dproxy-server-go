@@ -386,7 +386,9 @@ func IsClientConnected(server *Server, username string) bool {
 }
 
 func DisconnectClient(server *Server, username string) {
+	server.lock.Lock()
 	delete(server.clients, username)
+	server.lock.Unlock()
 }
 
 func GetClient(server *Server, username string) *Client {
