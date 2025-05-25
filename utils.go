@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 )
 
@@ -33,10 +34,19 @@ type CLIArgs struct {
 	LogLevel slog.Level
 }
 
+func GetenvOr(key, defaultValue string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return defaultValue
+	}
+
+	return value
+}
+
 func ParseArgs() (*CLIArgs, error) {
 	var args = &CLIArgs{}
-	flag.StringVar(&args.DbPath, "db-path", "./db/dproxy.db", "Path to the database file")
-	flag.StringVar(&args.KeyPath, "key-path", "./keys/private.pem", "Path to the private key file")
+	flag.StringVar(&args.DbPath, "db-path", GetenvOr("DB_PATH", "./db/dproxy.db"), "SQLite database path")
+	flag.StringVar(&args.KeyPath, "key-path", GetenvOr("KEY_PATH", "./keys/private.pem"), "EC private key path")
 	flag.StringVar(&args.Address, "address", "0.0.0.0", "Bind address to listen for connections")
 	httpPort := flag.Uint("http-port", 8080, "Port to listen for HTTP connections")
 	tcpPort := flag.Uint("tcp-port", 8081, "Port to listen for TCP (DProxy Client) connections")
