@@ -49,6 +49,7 @@ type Client struct {
 }
 
 var logger = slog.Default().WithGroup("tcp")
+var encryptData = true
 
 func InitServer(privateKeyPath string) (Server, error) {
 	privateKeyFile, err := os.ReadFile(privateKeyPath)
@@ -269,13 +270,34 @@ func ReadClientData(client *Client) error {
 			return fmt.Errorf("invalid connection id %d", packet.ConnectionId)
 		}
 
+		logger.Debug("Received bytes from connection", "length", len(packet.Data), "connectionId", packet.ConnectionId)
+		_, err = (*tcpConn).Write(packet.Data)
+		if err != nil {
+			return err
+		}
+	case ENCRYPTED_DATA:
+		packet, err := ReadEncryptedData(conn, header)
+		if err != nil {
+			return err
+		}
+
+		if packet.ConnectionId == 0 {
+			return fmt.Errorf("invalid connection id")
+		}
+
+		client.lock.RLock()
+		tcpConn, ok := client.connections[packet.ConnectionId]
+		client.lock.RUnlock()
+		if !ok {
+			return fmt.Errorf("invalid connection id %d", packet.ConnectionId)
+		}
+
 		plaintext, err := crypt.AESGCMDecrypt(client.CEK, packet.IV, packet.Ciphertext, packet.AuthenticationTag)
 		if err != nil {
 			return err
 		}
 
 		logger.Debug("Received bytes from connection", "length", len(plaintext), "connectionId", packet.ConnectionId)
-		// client.connections[packet.ConnectionId] <- plaintext
 		_, err = (*tcpConn).Write(plaintext)
 		if err != nil {
 			return err
@@ -327,7 +349,9 @@ func ConnectTo(client *Client, destination string, port uint16, timeout int) (ui
 	}
 
 	logger.Debug("Waiting for connection to be established", "connectionId", connectionId)
+	client.lock.Lock()
 	client.connEvents[connectionId] = make(chan bool)
+	client.lock.Unlock()
 
 	select {
 	case res := <-client.connEvents[connectionId]:
@@ -344,22 +368,31 @@ func ConnectTo(client *Client, destination string, port uint16, timeout int) (ui
 func DisconnectFrom(client *Client, connectionId uint32) error {
 	conn := *client.Conn
 
+	client.lock.Lock()
+	delete(client.connections, connectionId)
+	delete(client.connEvents, connectionId)
+	client.lock.Unlock()
+
 	logger.Debug("Disconnecting from connection", "connectionId", connectionId)
 	_, err := SendDisconnect(conn, connectionId)
 	if err != nil {
 		return err
 	}
 
-	client.lock.Lock()
-	delete(client.connections, connectionId)
-	delete(client.connEvents, connectionId)
-	client.lock.Unlock()
-
 	return nil
 }
 
 func WriteData(client *Client, connectionId uint32, plaintext []byte) error {
 	conn := *client.Conn
+
+	if !encryptData {
+		_, err := SendData(conn, connectionId, plaintext)
+		if err != nil {
+			return err
+		}
+
+		return nil
+	}
 
 	iv, err := RandomBytes(12)
 	if err != nil {
@@ -372,7 +405,7 @@ func WriteData(client *Client, connectionId uint32, plaintext []byte) error {
 	}
 
 	logger.Debug("Sending bytes to DProxyClient", "length", len(plaintext), "connectionId", connectionId)
-	_, err = SendData(conn, connectionId, iv, ciphertext, authenticationTag)
+	_, err = SendEncryptedData(conn, connectionId, iv, ciphertext, authenticationTag)
 	if err != nil {
 		return err
 	}

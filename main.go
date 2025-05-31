@@ -389,6 +389,7 @@ func StartHTTPServer(server *dproxy.Server, bindAddress string, port uint16) {
 		Handler: proxyHandler,
 	}
 
+	slog.Debug("Starting HTTP server", "address", httpServer.Addr, "port", port, "bindAddress", bindAddress)
 	if err := httpServer.ListenAndServe(); err != nil {
 		logger.Error("Error when starting HTTP server", "error", err)
 		return

@@ -28,6 +28,7 @@ const (
 	DISCONNECT
 	DISCONNECTED
 	DATA
+	ENCRYPTED_DATA
 	HEARTBEAT
 	HEARTBEAT_RESPONSE
 	ERROR
@@ -48,6 +49,7 @@ const (
 	CONNECTION_CLOSED
 	CONNECTION_TIMEOUT
 	INVALID_CONNECTION
+	DECRYPT_FAILED
 )
 
 type DProxyHeader struct {
@@ -75,7 +77,7 @@ type DProxyHandshakeFinal struct {
 }
 
 type DProxyHandshakeFinalized struct {
-	Header DProxyHeader
+	DProxyHeader
 }
 
 type DProxyConnect struct {
@@ -101,6 +103,12 @@ type DProxyDisconnected struct {
 }
 
 type DProxyData struct {
+	DProxyHeader
+	ConnectionId uint32
+	Data         []byte
+}
+
+type DProxyEncryptedData struct {
 	DProxyHeader
 	ConnectionId      uint32
 	IV                []byte

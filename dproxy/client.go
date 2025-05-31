@@ -171,18 +171,48 @@ func ReadData(stream net.Conn, header DProxyHeader) (DProxyData, error) {
 	}
 
 	var connectionId = binary.BigEndian.Uint32(buffer[0:4])
+	var dataLength = binary.BigEndian.Uint16(buffer[4:6])
+	var data = buffer[6 : 6+dataLength]
+
+	return DProxyData{header, connectionId, data}, nil
+}
+
+func SendData(stream net.Conn, connectionId uint32, data []byte) (int, error) {
+	var buffer = make([]byte, 4+2+len(data))
+	binary.BigEndian.PutUint32(buffer[0:4], connectionId)
+	binary.BigEndian.PutUint16(buffer[4:6], uint16(len(data)))
+	copy(buffer[6:], data)
+
+	var header = DProxyHeader{1, DATA, 4 + 2 + uint16(len(data)), NO_ERROR}
+	return stream.Write(serializePacket(header, buffer))
+}
+
+func ReadEncryptedData(stream net.Conn, header DProxyHeader) (DProxyEncryptedData, error) {
+	if header.Type != ENCRYPTED_DATA {
+		return DProxyEncryptedData{}, fmt.Errorf(ErrorUnexpectedType, ENCRYPTED_DATA, header.Type)
+	}
+
+	buffer, err := readExactly(stream, int(header.Length))
+	if err != nil {
+		return DProxyEncryptedData{}, err
+	}
+
+	var connectionId = binary.BigEndian.Uint32(buffer[0:4])
 	var iv = buffer[4:16]
 	var ciphertextLength = binary.BigEndian.Uint16(buffer[16:18])
 	var ciphertext = buffer[18 : 18+ciphertextLength]
 	var authenticationTag = buffer[18+ciphertextLength:]
 
-	return DProxyData{header, connectionId, iv, ciphertext, authenticationTag}, nil
+	return DProxyEncryptedData{header, connectionId, iv, ciphertext, authenticationTag}, nil
 }
 
-func SendData(stream net.Conn, connectionId uint32, iv []byte, ciphertext []byte, authenticationTag []byte) (
-	int,
-	error,
-) {
+func SendEncryptedData(
+	stream net.Conn,
+	connectionId uint32,
+	iv []byte,
+	ciphertext []byte,
+	authenticationTag []byte,
+) (int, error) {
 	var buffer = make([]byte, 4+12+2+len(ciphertext)+len(authenticationTag))
 	binary.BigEndian.PutUint32(buffer[0:4], connectionId)
 	copy(buffer[4:16], iv)
@@ -190,7 +220,7 @@ func SendData(stream net.Conn, connectionId uint32, iv []byte, ciphertext []byte
 	copy(buffer[18:], ciphertext)
 	copy(buffer[18+len(ciphertext):], authenticationTag)
 
-	var header = DProxyHeader{1, DATA, 4 + 12 + 2 + uint16(len(ciphertext)+len(authenticationTag)), NO_ERROR}
+	var header = DProxyHeader{1, ENCRYPTED_DATA, 4 + 12 + 2 + uint16(len(ciphertext)+len(authenticationTag)), NO_ERROR}
 	return stream.Write(serializePacket(header, buffer))
 }
 
