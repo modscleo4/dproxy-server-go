@@ -356,7 +356,7 @@ func StartHTTPServer(server *dproxy.Server, bindAddress string, port uint16) {
 				return
 			}
 
-			if !clientDB.Enabled || password != "__SUPER_SECRET_PASSWORD__" {
+			if clientDB == nil || !clientDB.Enabled || password != "__SUPER_SECRET_PASSWORD__" {
 				logger.Debug("Invalid credentials", "username", username, "password", password)
 				w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
 				w.WriteHeader(http.StatusProxyAuthRequired)
