@@ -485,6 +485,10 @@ func handleClient(conn net.Conn, server *dproxy.Server) {
 	}
 
 	logger.Info("Client connected", "username", publicKeyDb.Client.Id)
+	err = UpdateClientLastConnectedAt(db, publicKeyDb)
+	if err != nil {
+		logger.Error("Error when updating client last connected time", "error", err)
+	}
 
 	for {
 		err := dproxy.ReadClientData(&client)

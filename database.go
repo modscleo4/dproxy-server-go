@@ -92,3 +92,12 @@ func UploadClientPublicKey(db *gorm.DB, client *Client, derPublicKey []byte) err
 
 	return nil
 }
+
+func UpdateClientLastConnectedAt(db *gorm.DB, publicKey *PublicKey) error {
+	res := db.Where("client_id = ?", publicKey.ClientId).Update("last_connected_at", time.Now())
+	if res.Error != nil {
+		return res.Error
+	}
+
+	return nil
+}
