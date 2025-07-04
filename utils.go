@@ -26,12 +26,13 @@ import (
 )
 
 type CLIArgs struct {
-	DbPath   string
-	KeyPath  string
-	Address  string
-	HttpPort uint16
-	TcpPort  uint16
-	LogLevel slog.Level
+	DbPath       string
+	KeyPath      string
+	Address      string
+	HttpPort     uint16
+	TcpPort      uint16
+	LogLevel     slog.Level
+	HttpPassword string
 }
 
 func GetenvOr(key, defaultValue string) string {
@@ -51,6 +52,7 @@ func ParseArgs() (*CLIArgs, error) {
 	httpPort := flag.Uint("http-port", 8080, "Port to listen for HTTP connections")
 	tcpPort := flag.Uint("tcp-port", 8081, "Port to listen for TCP (DProxy Client) connections")
 	logLevelStr := flag.String("log-level", "info", "Log level")
+	flag.StringVar(&args.HttpPassword, "http-password", GetenvOr("HTTP_PASSWORD", "__SUPER_SECRET_PASSWORD__"), "HTTP Password")
 
 	flag.Parse()
 	if *httpPort <= 0 || *httpPort > 65535 {

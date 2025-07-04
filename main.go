@@ -71,7 +71,7 @@ func main() {
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, os.Interrupt)
 
-	go StartHTTPServer(&server, args.Address, args.HttpPort)
+	go StartHTTPServer(&server, args.Address, args.HttpPort, args.HttpPassword)
 	go StartDProxyServer(&server, args.Address, args.TcpPort)
 	go StartHeartbeatTicker(&server)
 
@@ -318,7 +318,7 @@ func handleHttpTunnel(server *dproxy.Server, client *dproxy.Client, w http.Respo
 	return nil
 }
 
-func StartHTTPServer(server *dproxy.Server, bindAddress string, port uint16) {
+func StartHTTPServer(server *dproxy.Server, bindAddress string, port uint16, httpPassword string) {
 	proxyHandler := http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == "GET" && r.URL.Path == "/key-exchange" {
@@ -356,7 +356,7 @@ func StartHTTPServer(server *dproxy.Server, bindAddress string, port uint16) {
 				return
 			}
 
-			if clientDB == nil || !clientDB.Enabled || password != "__SUPER_SECRET_PASSWORD__" {
+			if clientDB == nil || !clientDB.Enabled || password != httpPassword {
 				logger.Debug("Invalid credentials", "username", username, "password", password)
 				w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
 				w.WriteHeader(http.StatusProxyAuthRequired)
