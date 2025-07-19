@@ -117,6 +117,7 @@ func startHTTPServer(server *dproxy.Server, bindAddress string, port uint16, htt
 				logger.Debug("Invalid credentials", "username", username, "password", password)
 				w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
 				w.WriteHeader(http.StatusProxyAuthRequired)
+				return
 			}
 
 			if !dproxy.IsClientConnected(server, username) {

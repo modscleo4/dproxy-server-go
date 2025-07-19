@@ -23,19 +23,19 @@ import (
 )
 
 type Client struct {
-	Id        string     `json:"id" gorm:"primaryKey"`
-	Enabled   bool       `json:"enabled"`
-	CreatedAt *time.Time `json:"created_at" gorm:"autoCreateTime:milli"`
-	UpdatedAt *time.Time `json:"updated_at" gorm:"autoUpdateTime:milli"`
+	Id        string    `json:"id" gorm:"primaryKey"`
+	Enabled   bool      `json:"enabled"`
+	CreatedAt time.Time `json:"created_at" gorm:"autoCreateTime:milli"`
+	UpdatedAt time.Time `json:"updated_at" gorm:"autoUpdateTime:milli"`
 }
 
 type PublicKey struct {
-	Key             []byte     `json:"key" gorm:"primaryKey"`
-	ClientId        string     `json:"client_id" gorm:"index"`
-	Enabled         bool       `json:"enabled"`
-	LastConnectedAt *time.Time `json:"last_connected_at"`
-	CreatedAt       *time.Time `json:"created_at" gorm:"autoCreateTime:milli"`
-	UpdatedAt       *time.Time `json:"updated_at" gorm:"autoUpdateTime:milli"`
+	Key             []byte    `json:"key" gorm:"primaryKey"`
+	ClientId        string    `json:"client_id" gorm:"index"`
+	Enabled         bool      `json:"enabled"`
+	LastConnectedAt time.Time `json:"last_connected_at"`
+	CreatedAt       time.Time `json:"created_at" gorm:"autoCreateTime:milli"`
+	UpdatedAt       time.Time `json:"updated_at" gorm:"autoUpdateTime:milli"`
 
 	Client *Client `json:"-" gorm:"foreignKey:ClientId;references:Id"`
 }
@@ -94,7 +94,8 @@ func UploadClientPublicKey(db *gorm.DB, client *Client, derPublicKey []byte) err
 }
 
 func UpdateClientLastConnectedAt(db *gorm.DB, publicKey *PublicKey) error {
-	res := db.Where(&publicKey).Update("last_connected_at", time.Now())
+	publicKey.LastConnectedAt = time.Now()
+	res := db.Save(publicKey)
 	if res.Error != nil {
 		return res.Error
 	}
