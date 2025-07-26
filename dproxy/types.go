@@ -78,6 +78,7 @@ type DProxyHandshakeFinal struct {
 
 type DProxyHandshakeFinalized struct {
 	DProxyHeader
+	Id string
 }
 
 type DProxyConnect struct {

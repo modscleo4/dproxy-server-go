@@ -201,7 +201,7 @@ func AcceptConnection(server *Server, client *Client) error {
 		return fmt.Errorf("invalid handshake final packet")
 	}
 
-	_, err = SendHandshakeFinalized(conn)
+	_, err = SendHandshakeFinalized(conn, client.Id)
 	if err != nil {
 		return err
 	}
@@ -250,6 +250,9 @@ func ReadClientData(client *Client) error {
 
 		logger.Debug("Connection closed", "connectionId", packet.ConnectionId)
 		client.lock.Lock()
+		if channel, ok := client.connEvents[packet.ConnectionId]; ok {
+			channel <- false
+		}
 		delete(client.connections, packet.ConnectionId)
 		delete(client.connEvents, packet.ConnectionId)
 		client.lock.Unlock()

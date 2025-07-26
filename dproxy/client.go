@@ -108,9 +108,13 @@ func ReadHandshakeFinal(stream net.Conn, header DProxyHeader) (DProxyHandshakeFi
 	return DProxyHandshakeFinal{header, plaintext}, nil
 }
 
-func SendHandshakeFinalized(stream net.Conn) (int, error) {
+func SendHandshakeFinalized(stream net.Conn, Id string) (int, error) {
+	var buffer = make([]byte, 2+len(Id))
+	binary.BigEndian.PutUint16(buffer[0:2], uint16(len(Id)))
+	copy(buffer[2:], Id)
+
 	var header = DProxyHeader{1, HANDSHAKE_FINALIZED, 0, NO_ERROR}
-	return stream.Write(serializePacket(header, []byte{}))
+	return stream.Write(serializePacket(header, buffer))
 }
 
 func SendConnect(stream net.Conn, connectionId uint32, destination string, port uint16) (int, error) {
