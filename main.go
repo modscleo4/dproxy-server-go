@@ -27,6 +27,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strings"
@@ -36,10 +37,15 @@ import (
 	"gorm.io/gorm"
 
 	"dproxy-server-go/dproxy"
+	"dproxy-server-go/socks"
+	"dproxy-server-go/socks/auth"
 )
 
 var logger = slog.Default().WithGroup("main")
 var db *gorm.DB
+
+var InvalidCredentialsError = fmt.Errorf("invalid credentials")
+var NotConnectedError = fmt.Errorf("client not connected")
 
 func main() {
 	args, err := ParseArgs()
@@ -69,6 +75,7 @@ func main() {
 
 	go startHTTPServer(&server, args.Address, args.HttpPort, args.HttpPassword)
 	go startDProxyServer(&server, args.Address, args.TcpPort)
+	go startSocksServer(&server, args.Address, args.SocksPort, args.HttpPassword)
 	go startHeartbeatTicker(&server)
 
 	<-sc
@@ -84,6 +91,8 @@ func startHTTPServer(server *dproxy.Server, bindAddress string, port uint16, htt
 			} else if r.Method == "POST" && r.URL.Path == "/key-exchange" {
 				uploadClientPublicKey(server, w, r)
 				return
+			} else if r.Method == "GET" && r.URL.Path == "/stats" {
+				getCientsStats(server, w, r)
 			}
 
 			if r.Method != "CONNECT" &&
@@ -106,28 +115,19 @@ func startHTTPServer(server *dproxy.Server, bindAddress string, port uint16, htt
 
 			r.Header.Set("Authorization", originalAuth)
 
-			clientDB, err := GetClientFromId(db, username)
+			client, err := getDProxyClient(server, username, password, httpPassword)
 			if err != nil {
-				logger.Error("Error when getting client", "error", err)
 				w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
-				w.WriteHeader(http.StatusProxyAuthRequired)
+				if errors.Is(err, InvalidCredentialsError) {
+					w.WriteHeader(http.StatusProxyAuthRequired)
+				} else if errors.Is(err, NotConnectedError) {
+					w.WriteHeader(http.StatusServiceUnavailable)
+				} else {
+					w.WriteHeader(http.StatusProxyAuthRequired)
+				}
+
 				return
 			}
-
-			if clientDB == nil || !clientDB.Enabled || password != httpPassword {
-				logger.Debug("Invalid credentials", "username", username, "password", password)
-				w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
-				w.WriteHeader(http.StatusProxyAuthRequired)
-				return
-			}
-
-			if !dproxy.IsClientConnected(server, username) {
-				logger.Debug("Client not connected", "username", username)
-				w.WriteHeader(http.StatusServiceUnavailable)
-				return
-			}
-
-			client := dproxy.GetClient(server, username)
 
 			if r.Method == "CONNECT" {
 				err = handleHttpsTunnel(server, client, w, r)
@@ -173,19 +173,17 @@ func startDProxyServer(server *dproxy.Server, bindAddress string, port uint16) {
 	logger.Info("DproxyServer is running", "address", listener.Addr().String(), "port", port)
 
 	for {
-		// Accept incoming connections
 		conn, err := listener.Accept()
 		if err != nil {
 			log.Print(err)
 			continue
 		}
 
-		// Handle client connection in a goroutine
-		go handleClient(conn, server)
+		go handleDProxyClient(conn, server)
 	}
 }
 
-func handleClient(conn net.Conn, server *dproxy.Server) {
+func handleDProxyClient(conn net.Conn, server *dproxy.Server) {
 	logger.Debug("Connection from DproxyClient", "remoteAddr", conn.RemoteAddr().String())
 
 	defer func(conn net.Conn) {
@@ -275,4 +273,160 @@ func startHeartbeatTicker(server *dproxy.Server) {
 			dproxy.SendHeartbeatToClients(server)
 		}
 	}
+}
+
+func startSocksServer(server *dproxy.Server, bindAddress string, port uint16, httpPassword string) {
+	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", bindAddress, port))
+	if err != nil {
+		logger.Error("Error when listening for connections", "error", err)
+		return
+	}
+
+	defer func(listener net.Listener) {
+		err := listener.Close()
+		if err != nil {
+			logger.Error("Error when closing listener", "error", err)
+			os.Exit(1)
+		}
+	}(listener)
+
+	logger.Info("Socks Server is running", "address", listener.Addr().String(), "port", port)
+
+	for {
+		conn, err := listener.Accept()
+		if err != nil {
+			log.Print(err)
+			continue
+		}
+
+		go handleSocksClient(conn, server, httpPassword)
+	}
+}
+
+func handleSocksClient(conn net.Conn, server *dproxy.Server, httpPassword string) {
+	logger.Debug("Connection from Socks", "remoteAddr", conn.RemoteAddr().String())
+
+	_, err := socks.ReadVersionIdentifier(conn)
+	if err != nil {
+		logger.Error("Error when reading version identifier", "error", err)
+		return
+	}
+
+	err = socks.SendMethodSelection(conn, socks.AUTH_USERNAME_PASSWORD)
+	if err != nil {
+		logger.Error("Error when sending auth method response", "error", err)
+		return
+	}
+
+	usernameAuthRequest, err := socks.ReadUsernameAuthRequest(conn)
+	if err != nil {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.ErrClosedPipe) {
+			return
+		}
+
+		logger.Error("Error when reading auth request", "error", err)
+		return
+	}
+
+	client, err := getDProxyClient(server, usernameAuthRequest.Uname, usernameAuthRequest.Passwd, httpPassword)
+	if err != nil {
+		err = socks.SendUsernameAuthReply(conn, auth.AUTH_FAILURE)
+		return
+	}
+
+	err = socks.SendUsernameAuthReply(conn, auth.AUTH_SUCCESS)
+	if err != nil {
+		logger.Error("Error when sending auth success response", "error", err)
+		return
+	}
+
+	request, err := socks.ReadRequest(conn)
+	if err != nil {
+		logger.Error("Error when reading request", "error", err)
+		return
+	}
+
+	if request.Cmd != socks.CMD_CONNECT {
+		err = socks.SendReply(conn, socks.REPLY_COMMAND_NOT_SUPPORTED, netip.IPv4Unspecified(), 0)
+	}
+
+	destination := socks.GetDestinationAsStr(request)
+	connectionId, err := dproxy.ConnectTo(client, destination, request.DstPort, 30)
+	if err != nil {
+		err = socks.SendReply(conn, socks.REPLY_TTL_EXPIRED, netip.IPv4Unspecified(), 0)
+		return
+	}
+
+	defer (func() {
+		err = dproxy.DisconnectFrom(client, connectionId)
+		if err != nil {
+			logger.Error("Error when disconnecting from client", "error", err)
+			return
+		}
+	})()
+
+	dproxy.SetConnectionStream(client, connectionId, &conn)
+	if !dproxy.IsClientConnected(server, usernameAuthRequest.Uname) {
+		return
+	}
+
+	bindAddr := dproxy.GetConnectionBindAddress(client, connectionId)
+	if bindAddr == nil {
+		err = socks.SendReply(conn, socks.REPLY_HOST_UNREACHABLE, netip.IPv4Unspecified(), 0)
+		if err != nil {
+			logger.Error("Error when sending host bind address", "error", err)
+		}
+
+		return
+	}
+
+	err = socks.SendReply(conn, socks.REPLY_SUCCEEDED, *bindAddr, request.DstPort)
+	if err != nil {
+		logger.Error("Error when sending reply", "error", err)
+		return
+	}
+
+	logger.Info("Socks client connected", "username", usernameAuthRequest.Uname)
+
+	for {
+		buffer := make([]byte, 4096)
+		bytes, err := conn.Read(buffer)
+		if err != nil {
+			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.ErrClosedPipe) {
+				break
+			}
+
+			logger.Error("Error when reading response", "error", err)
+			return
+		}
+
+		err = dproxy.WriteData(client, connectionId, buffer[:bytes])
+		if err != nil {
+			return
+		}
+	}
+}
+
+func getDProxyClient(
+	server *dproxy.Server,
+	username string, password string,
+	clientPassword string,
+) (*dproxy.Client, error) {
+	clientDB, err := GetClientFromId(db, username)
+	if err != nil {
+		logger.Error("Error when getting client", "error", err)
+		return nil, err
+	}
+
+	if clientDB == nil || !clientDB.Enabled || password != clientPassword {
+		logger.Debug("Invalid credentials", "username", username, "password", password)
+		return nil, InvalidCredentialsError
+	}
+
+	if !dproxy.IsClientConnected(server, username) {
+		logger.Debug("Client not connected", "username", username)
+		return nil, NotConnectedError
+	}
+
+	return dproxy.GetClient(server, username), nil
 }

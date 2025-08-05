@@ -139,7 +139,9 @@ func ReadConnected(stream net.Conn, header DProxyHeader) (DProxyConnected, error
 	}
 
 	var connectionId = binary.BigEndian.Uint32(buffer[0:4])
-	return DProxyConnected{header, connectionId}, nil
+	var addressLength = binary.BigEndian.Uint16(buffer[4:6])
+	var address = string(buffer[6 : 6+addressLength])
+	return DProxyConnected{header, connectionId, address}, nil
 }
 
 func SendDisconnect(stream net.Conn, connectionId uint32) (int, error) {
@@ -238,13 +240,13 @@ func ReadHeartbeat(stream net.Conn, header DProxyHeader) (DProxyHeartbeat, error
 		return DProxyHeartbeat{}, err
 	}
 
-	var timestamp = int64(binary.BigEndian.Uint64(buffer[0:8]))
+	var timestamp = binary.BigEndian.Uint64(buffer[0:8])
 	return DProxyHeartbeat{header, timestamp}, nil
 }
 
-func SendHeartbeat(stream net.Conn, timestamp int64) (int, error) {
+func SendHeartbeat(stream net.Conn, timestamp uint64) (int, error) {
 	var buffer = make([]byte, 8)
-	binary.BigEndian.PutUint64(buffer[0:8], uint64(timestamp))
+	binary.BigEndian.PutUint64(buffer[0:8], timestamp)
 
 	var header = DProxyHeader{1, HEARTBEAT, 8, NO_ERROR}
 	return stream.Write(serializePacket(header, buffer))
@@ -260,15 +262,17 @@ func ReadHeartbeatResponse(stream net.Conn, header DProxyHeader) (DProxyHeartbea
 		return DProxyHeartbeatResponse{}, err
 	}
 
-	var timestamp = int64(binary.BigEndian.Uint64(buffer[0:8]))
-	return DProxyHeartbeatResponse{header, timestamp}, nil
+	var timestamp = binary.BigEndian.Uint64(buffer[0:8])
+	var latency = binary.BigEndian.Uint32(buffer[8:12])
+	return DProxyHeartbeatResponse{header, timestamp, latency}, nil
 }
 
-func SendHeartbeatResponse(stream net.Conn, timestamp int64) (int, error) {
-	var buffer = make([]byte, 8)
-	binary.BigEndian.PutUint64(buffer[0:8], uint64(timestamp))
+func SendHeartbeatResponse(stream net.Conn, timestamp uint64, latency uint32) (int, error) {
+	var buffer = make([]byte, 12)
+	binary.BigEndian.PutUint64(buffer[0:8], timestamp)
+	binary.BigEndian.PutUint32(buffer[8:12], latency)
 
-	var header = DProxyHeader{1, HEARTBEAT_RESPONSE, 8, NO_ERROR}
+	var header = DProxyHeader{1, HEARTBEAT_RESPONSE, 12, NO_ERROR}
 	return stream.Write(serializePacket(header, buffer))
 }
 

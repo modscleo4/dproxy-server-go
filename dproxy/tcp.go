@@ -25,6 +25,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"sync"
 	"time"
@@ -42,10 +43,12 @@ type Client struct {
 	Id          string
 	CEK         []byte
 	Conn        *net.Conn
+	latency     time.Duration
 	nextConnId  uint32
 	lock        sync.RWMutex
 	connections map[uint32]*net.Conn
 	connEvents  map[uint32]chan bool
+	connAddrs   map[uint32]*netip.Addr
 }
 
 var logger = slog.Default().WithGroup("tcp")
@@ -209,6 +212,7 @@ func AcceptConnection(server *Server, client *Client) error {
 	client.nextConnId = 1
 	client.connections = make(map[uint32]*net.Conn)
 	client.connEvents = make(map[uint32]chan bool)
+	client.connAddrs = make(map[uint32]*netip.Addr)
 	server.lock.Lock()
 	server.clients[client.Id] = client
 	server.lock.Unlock()
@@ -242,6 +246,13 @@ func ReadClientData(client *Client) error {
 
 		logger.Debug("Connection established", "connectionId", packet.ConnectionId)
 		client.connEvents[packet.ConnectionId] <- true
+
+		ip, err := netip.ParseAddr(packet.Address)
+		if err != nil {
+			return err
+		}
+
+		client.connAddrs[packet.ConnectionId] = &ip
 	case DISCONNECTED:
 		packet, err := ReadDisconnected(conn, header)
 		if err != nil {
@@ -255,6 +266,7 @@ func ReadClientData(client *Client) error {
 		}
 		delete(client.connections, packet.ConnectionId)
 		delete(client.connEvents, packet.ConnectionId)
+		delete(client.connAddrs, packet.ConnectionId)
 		client.lock.Unlock()
 	case DATA:
 		packet, err := ReadData(conn, header)
@@ -306,20 +318,24 @@ func ReadClientData(client *Client) error {
 			return err
 		}
 	case HEARTBEAT:
-		_, err := ReadHeartbeat(conn, header)
+		packet, err := ReadHeartbeat(conn, header)
 		if err != nil {
 			return err
 		}
 
-		_, err = SendHeartbeatResponse(conn, time.Now().UTC().UnixMilli())
+		timestamp := uint64(time.Now().UTC().UnixMilli())
+		latency := uint32(timestamp - packet.Timestamp)
+		_, err = SendHeartbeatResponse(conn, timestamp, latency)
 		if err != nil {
 			return err
 		}
 	case HEARTBEAT_RESPONSE:
-		_, err := ReadHeartbeatResponse(conn, header)
+		packet, err := ReadHeartbeatResponse(conn, header)
 		if err != nil {
 			return err
 		}
+
+		client.latency = time.Duration(packet.Latency) * time.Millisecond
 	case ERROR:
 		packet, err := ReadError(conn, header)
 		if err != nil {
@@ -374,6 +390,7 @@ func DisconnectFrom(client *Client, connectionId uint32) error {
 	client.lock.Lock()
 	delete(client.connections, connectionId)
 	delete(client.connEvents, connectionId)
+	delete(client.connAddrs, connectionId)
 	client.lock.Unlock()
 
 	logger.Debug("Disconnecting from connection", "connectionId", connectionId)
@@ -427,6 +444,15 @@ func DisconnectClient(server *Server, username string) {
 	server.lock.Unlock()
 }
 
+func GetClientsStats(server *Server) map[string]time.Duration {
+	clients := make(map[string]time.Duration)
+	for username, client := range server.clients {
+		clients[username] = client.latency
+	}
+
+	return clients
+}
+
 func GetClient(server *Server, username string) *Client {
 	return server.clients[username]
 }
@@ -437,6 +463,15 @@ func SetConnectionStream(client *Client, connectionId uint32, conn *net.Conn) {
 	client.lock.Unlock()
 }
 
+func GetConnectionBindAddress(client *Client, connectionId uint32) *netip.Addr {
+	addr, ok := client.connAddrs[connectionId]
+	if !ok {
+		return nil
+	}
+
+	return addr
+}
+
 func SendHeartbeatToClients(server *Server) {
 	if len(server.clients) == 0 {
 		return
@@ -444,7 +479,7 @@ func SendHeartbeatToClients(server *Server) {
 
 	server.lock.RLock()
 	for _, client := range server.clients {
-		_, err := SendHeartbeat(*client.Conn, time.Now().UTC().UnixMilli())
+		_, err := SendHeartbeat(*client.Conn, uint64(time.Now().UTC().UnixMilli()))
 		if err != nil {
 			logger.Error("Failed to send heartbeat to client", "username", client.Id, "error", err)
 		}

@@ -31,6 +31,7 @@ type CLIArgs struct {
 	Address      string
 	HttpPort     uint16
 	TcpPort      uint16
+	SocksPort    uint16
 	LogLevel     slog.Level
 	HttpPassword string
 }
@@ -51,8 +52,14 @@ func ParseArgs() (*CLIArgs, error) {
 	flag.StringVar(&args.Address, "address", "0.0.0.0", "Bind address to listen for connections")
 	httpPort := flag.Uint("http-port", 8080, "Port to listen for HTTP connections")
 	tcpPort := flag.Uint("tcp-port", 8081, "Port to listen for TCP (DProxy Client) connections")
+	socksPort := flag.Uint("socks-port", 1080, "Port to listen for TCP Socks connections")
 	logLevelStr := flag.String("log-level", "info", "Log level")
-	flag.StringVar(&args.HttpPassword, "http-password", GetenvOr("HTTP_PASSWORD", "__SUPER_SECRET_PASSWORD__"), "HTTP Password")
+	flag.StringVar(
+		&args.HttpPassword,
+		"http-password",
+		GetenvOr("HTTP_PASSWORD", "__SUPER_SECRET_PASSWORD__"),
+		"HTTP Password",
+	)
 
 	flag.Parse()
 	if *httpPort <= 0 || *httpPort > 65535 {
@@ -63,8 +70,13 @@ func ParseArgs() (*CLIArgs, error) {
 		return nil, fmt.Errorf("invalid dproxy port")
 	}
 
+	if *socksPort <= 0 || *socksPort > 65535 {
+		return nil, fmt.Errorf("invalid socks port")
+	}
+
 	args.HttpPort = uint16(*httpPort)
 	args.TcpPort = uint16(*tcpPort)
+	args.SocksPort = uint16(*socksPort)
 
 	switch *logLevelStr {
 	case "debug", "DEBUG":

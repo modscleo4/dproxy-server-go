@@ -17,12 +17,13 @@
 package main
 
 import (
-	"dproxy-server-go/dproxy"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+
+	"dproxy-server-go/dproxy"
 )
 
 func handleHttpsTunnel(server *dproxy.Server, client *dproxy.Client, w http.ResponseWriter, r *http.Request) error {
@@ -62,14 +63,10 @@ func handleHttpsTunnel(server *dproxy.Server, client *dproxy.Client, w http.Resp
 	dproxy.SetConnectionStream(client, connectionId, &clientConn)
 	go func() {
 		for {
-			if !dproxy.IsClientConnected(server, client.Id) {
-				break
-			}
-
 			buffer := make([]byte, 32768)
 			bytesRead, err := clientConn.Read(buffer)
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				logger.Debug("HTTP Client disconnected", "username", client.Id)
+				logger.Debug("HTTPS Client disconnected", "username", client.Id)
 				break
 			} else if err != nil {
 				logger.Error("Error when reading the HTTP connection", "error", err)
@@ -78,7 +75,7 @@ func handleHttpsTunnel(server *dproxy.Server, client *dproxy.Client, w http.Resp
 
 			err = dproxy.WriteData(client, connectionId, buffer[:bytesRead])
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				logger.Debug("HTTP Client disconnected", "username", client.Id)
+				logger.Debug("DProxyClient disconnected", "username", client.Id)
 				break
 			}
 		}
@@ -140,10 +137,6 @@ func handleHttpTunnel(server *dproxy.Server, client *dproxy.Client, w http.Respo
 	dproxy.SetConnectionStream(client, connectionId, &clientConn)
 	go func() {
 		for {
-			if !dproxy.IsClientConnected(server, client.Id) {
-				break
-			}
-
 			buffer := make([]byte, 32768)
 			bytesRead, err := clientConn.Read(buffer)
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
@@ -156,7 +149,7 @@ func handleHttpTunnel(server *dproxy.Server, client *dproxy.Client, w http.Respo
 
 			err = dproxy.WriteData(client, connectionId, buffer[:bytesRead])
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				logger.Debug("HTTP Client disconnected", "username", client.Id)
+				logger.Debug("DProxyClient disconnected", "username", client.Id)
 				break
 			}
 		}

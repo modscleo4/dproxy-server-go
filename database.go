@@ -22,6 +22,13 @@ import (
 	"gorm.io/gorm"
 )
 
+type User struct {
+	gorm.Model
+	Email    string `json:"email" gorm:"unique"`
+	Password string `json:"password"`
+	Name     string `json:"name"`
+}
+
 type Client struct {
 	Id        string    `json:"id" gorm:"primaryKey"`
 	Enabled   bool      `json:"enabled"`
@@ -41,7 +48,7 @@ type PublicKey struct {
 }
 
 func MigrateDatabase(db *gorm.DB) error {
-	err := db.AutoMigrate(&Client{}, &PublicKey{})
+	err := db.AutoMigrate(&User{}, &Client{}, &PublicKey{})
 	if err != nil {
 		return err
 	}

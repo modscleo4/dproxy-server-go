@@ -19,6 +19,8 @@ VOLUME /app/db
 VOLUME /app/keys
 
 EXPOSE 8080
+EXPOSE 1080
+EXPOSE 8081
 
 RUN addgroup -S user && adduser -S user -G user
 

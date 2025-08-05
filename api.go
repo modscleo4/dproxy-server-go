@@ -18,12 +18,15 @@ package main
 
 import (
 	"crypto/x509"
-	"dproxy-server-go/dproxy"
+	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"github.com/golang-jwt/jwt/v5"
 	"net/http"
 	"strings"
+
+	"github.com/golang-jwt/jwt/v5"
+
+	"dproxy-server-go/dproxy"
 )
 
 func getServerPublicKey(server *dproxy.Server, w http.ResponseWriter, _ *http.Request) {
@@ -113,4 +116,20 @@ func uploadClientPublicKey(server *dproxy.Server, w http.ResponseWriter, r *http
 	}
 
 	w.WriteHeader(http.StatusCreated)
+}
+
+func getCientsStats(server *dproxy.Server, w http.ResponseWriter, _ *http.Request) {
+	clients := dproxy.GetClientsStats(server)
+	b, err := json.Marshal(clients)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	_, err = w.Write(b)
+	if err != nil {
+		return
+	}
 }

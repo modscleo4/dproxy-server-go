@@ -91,6 +91,7 @@ type DProxyConnect struct {
 type DProxyConnected struct {
 	DProxyHeader
 	ConnectionId uint32
+	Address      string
 }
 
 type DProxyDisconnect struct {
@@ -119,12 +120,13 @@ type DProxyEncryptedData struct {
 
 type DProxyHeartbeat struct {
 	DProxyHeader
-	Timestamp int64
+	Timestamp uint64
 }
 
 type DProxyHeartbeatResponse struct {
 	DProxyHeader
-	Timestamp int64
+	Timestamp uint64
+	Latency   uint32
 }
 
 type DProxyErrorPacket struct {
