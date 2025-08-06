@@ -409,7 +409,8 @@ func handleSocksClient(conn net.Conn, server *dproxy.Server, httpPassword string
 
 func getDProxyClient(
 	server *dproxy.Server,
-	username string, password string,
+	username string,
+	password string,
 	clientPassword string,
 ) (*dproxy.Client, error) {
 	clientDB, err := GetClientFromId(db, username)

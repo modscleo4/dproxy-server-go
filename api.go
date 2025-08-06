@@ -126,8 +126,8 @@ func getCientsStats(server *dproxy.Server, w http.ResponseWriter, _ *http.Reques
 		return
 	}
 
-	w.WriteHeader(http.StatusOK)
 	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
 	_, err = w.Write(b)
 	if err != nil {
 		return

@@ -125,8 +125,8 @@ type DProxyHeartbeat struct {
 
 type DProxyHeartbeatResponse struct {
 	DProxyHeader
-	Timestamp uint64
-	Latency   uint32
+	TimestampSender   uint64
+	TimestampReceiver uint64
 }
 
 type DProxyErrorPacket struct {

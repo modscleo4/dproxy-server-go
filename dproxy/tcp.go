@@ -324,8 +324,7 @@ func ReadClientData(client *Client) error {
 		}
 
 		timestamp := uint64(time.Now().UTC().UnixMilli())
-		latency := uint32(timestamp - packet.Timestamp)
-		_, err = SendHeartbeatResponse(conn, timestamp, latency)
+		_, err = SendHeartbeatResponse(conn, packet.Timestamp, timestamp)
 		if err != nil {
 			return err
 		}
@@ -335,7 +334,8 @@ func ReadClientData(client *Client) error {
 			return err
 		}
 
-		client.latency = time.Duration(packet.Latency) * time.Millisecond
+		timestamp := uint64(time.Now().UTC().UnixMilli())
+		client.latency = time.Duration((timestamp-packet.TimestampSender)/2) * time.Millisecond
 	case ERROR:
 		packet, err := ReadError(conn, header)
 		if err != nil {

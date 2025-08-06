@@ -262,17 +262,17 @@ func ReadHeartbeatResponse(stream net.Conn, header DProxyHeader) (DProxyHeartbea
 		return DProxyHeartbeatResponse{}, err
 	}
 
-	var timestamp = binary.BigEndian.Uint64(buffer[0:8])
-	var latency = binary.BigEndian.Uint32(buffer[8:12])
-	return DProxyHeartbeatResponse{header, timestamp, latency}, nil
+	var timestampSender = binary.BigEndian.Uint64(buffer[0:8])
+	var timestampReceiver = binary.BigEndian.Uint64(buffer[8:16])
+	return DProxyHeartbeatResponse{header, timestampSender, timestampReceiver}, nil
 }
 
-func SendHeartbeatResponse(stream net.Conn, timestamp uint64, latency uint32) (int, error) {
-	var buffer = make([]byte, 12)
-	binary.BigEndian.PutUint64(buffer[0:8], timestamp)
-	binary.BigEndian.PutUint32(buffer[8:12], latency)
+func SendHeartbeatResponse(stream net.Conn, timestampSender uint64, timestampReceiver uint64) (int, error) {
+	var buffer = make([]byte, 16)
+	binary.BigEndian.PutUint64(buffer[0:8], timestampSender)
+	binary.BigEndian.PutUint64(buffer[8:16], timestampReceiver)
 
-	var header = DProxyHeader{1, HEARTBEAT_RESPONSE, 12, NO_ERROR}
+	var header = DProxyHeader{1, HEARTBEAT_RESPONSE, 16, NO_ERROR}
 	return stream.Write(serializePacket(header, buffer))
 }
 
