@@ -193,6 +193,19 @@ func handleDProxyClient(conn net.Conn, server *dproxy.Server) {
 		}
 	}(conn)
 
+	tcpConn, ok := conn.(*net.TCPConn)
+	if !ok {
+		fmt.Println("Not a TCP connection, cannot disable Nagle's algorithm.")
+		return
+	}
+
+	// Set TCP_NODELAY to true
+	err := tcpConn.SetNoDelay(true)
+	if err != nil {
+		fmt.Println("Error setting TCP_NODELAY:", err)
+		return
+	}
+
 	clientPublicKey, err := dproxy.StartHandshake(conn)
 	if err != nil {
 		logger.Error("Error when starting handshake", "error", err)
