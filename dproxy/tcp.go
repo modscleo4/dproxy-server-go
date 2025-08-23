@@ -43,6 +43,8 @@ type Client struct {
 	Id          string
 	CEK         []byte
 	Conn        *net.Conn
+	bytesWrite  uint64
+	bytesRead   uint64
 	latency     time.Duration
 	nextConnId  uint32
 	lock        sync.RWMutex
@@ -286,6 +288,7 @@ func ReadClientData(client *Client) error {
 		}
 
 		logger.Debug("Received bytes from connection", "length", len(packet.Data), "connectionId", packet.ConnectionId)
+		client.bytesRead += uint64(len(packet.Data))
 		_, err = (*tcpConn).Write(packet.Data)
 		if err != nil {
 			return err
@@ -430,6 +433,7 @@ func WriteData(client *Client, connectionId uint32, plaintext []byte) error {
 		return err
 	}
 
+	client.bytesWrite += uint64(len(plaintext))
 	return nil
 }
 
@@ -444,10 +448,20 @@ func DisconnectClient(server *Server, username string) {
 	server.lock.Unlock()
 }
 
-func GetClientsStats(server *Server) map[string]time.Duration {
-	clients := make(map[string]time.Duration)
+type ClientStats struct {
+	Latency      time.Duration
+	BytesWritten uint64
+	BytesRead    uint64
+}
+
+func GetClientsStats(server *Server) map[string]ClientStats {
+	clients := make(map[string]ClientStats)
 	for username, client := range server.clients {
-		clients[username] = client.latency
+		clients[username] = ClientStats{
+			Latency:      client.latency,
+			BytesWritten: client.bytesWrite,
+			BytesRead:    client.bytesRead,
+		}
 	}
 
 	return clients
