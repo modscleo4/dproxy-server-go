@@ -316,6 +316,7 @@ func ReadClientData(client *Client) error {
 		}
 
 		logger.Debug("Received bytes from connection", "length", len(plaintext), "connectionId", packet.ConnectionId)
+		client.bytesRead += uint64(len(plaintext))
 		_, err = (*tcpConn).Write(plaintext)
 		if err != nil {
 			return err
