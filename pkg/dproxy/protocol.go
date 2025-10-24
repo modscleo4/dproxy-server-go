@@ -20,9 +20,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
-)
 
-var ErrorUnexpectedType = "expected packet type %d, got %d"
+	"dproxy-server-go/pkg/internal/netutil"
+)
 
 func serializePacket(header DProxyHeader, data []byte) []byte {
 	var buffer = make([]byte, 5+len(data))
@@ -35,23 +35,8 @@ func serializePacket(header DProxyHeader, data []byte) []byte {
 	return buffer
 }
 
-func readExactly(stream net.Conn, expectedLength int) ([]byte, error) {
-	var buffer = make([]byte, expectedLength)
-	read := 0
-	for read < expectedLength {
-		n, err := stream.Read(buffer[read:])
-		if err != nil {
-			return nil, err
-		}
-
-		read += n
-	}
-
-	return buffer, nil
-}
-
 func GetPacketHeader(stream net.Conn) (DProxyHeader, error) {
-	buffer, err := readExactly(stream, 5)
+	buffer, err := netutil.ReadExactly(stream, 5)
 	if err != nil {
 		return DProxyHeader{}, err
 	}
@@ -70,7 +55,7 @@ func ReadHandshakeInit(stream net.Conn, header DProxyHeader) (DProxyHandshakeIni
 		return DProxyHandshakeInit{}, fmt.Errorf(ErrorUnexpectedType, HANDSHAKE_INIT, header.Type)
 	}
 
-	buffer, err := readExactly(stream, int(header.Length))
+	buffer, err := netutil.ReadExactly(stream, int(header.Length))
 	if err != nil {
 		return DProxyHandshakeInit{}, err
 	}
@@ -97,7 +82,7 @@ func ReadHandshakeFinal(stream net.Conn, header DProxyHeader) (DProxyHandshakeFi
 		return DProxyHandshakeFinal{}, fmt.Errorf(ErrorUnexpectedType, HANDSHAKE_FINAL, header.Type)
 	}
 
-	buffer, err := readExactly(stream, int(header.Length))
+	buffer, err := netutil.ReadExactly(stream, int(header.Length))
 	if err != nil {
 		return DProxyHandshakeFinal{}, err
 	}
@@ -133,7 +118,7 @@ func ReadConnected(stream net.Conn, header DProxyHeader) (DProxyConnected, error
 		return DProxyConnected{}, fmt.Errorf(ErrorUnexpectedType, CONNECTED, header.Type)
 	}
 
-	buffer, err := readExactly(stream, int(header.Length))
+	buffer, err := netutil.ReadExactly(stream, int(header.Length))
 	if err != nil {
 		return DProxyConnected{}, err
 	}
@@ -157,7 +142,7 @@ func ReadDisconnected(stream net.Conn, header DProxyHeader) (DProxyDisconnected,
 		return DProxyDisconnected{}, fmt.Errorf(ErrorUnexpectedType, DISCONNECTED, header.Type)
 	}
 
-	buffer, err := readExactly(stream, int(header.Length))
+	buffer, err := netutil.ReadExactly(stream, int(header.Length))
 	if err != nil {
 		return DProxyDisconnected{}, err
 	}
@@ -171,7 +156,7 @@ func ReadData(stream net.Conn, header DProxyHeader) (DProxyData, error) {
 		return DProxyData{}, fmt.Errorf(ErrorUnexpectedType, DATA, header.Type)
 	}
 
-	buffer, err := readExactly(stream, int(header.Length))
+	buffer, err := netutil.ReadExactly(stream, int(header.Length))
 	if err != nil {
 		return DProxyData{}, err
 	}
@@ -198,7 +183,7 @@ func ReadEncryptedData(stream net.Conn, header DProxyHeader) (DProxyEncryptedDat
 		return DProxyEncryptedData{}, fmt.Errorf(ErrorUnexpectedType, ENCRYPTED_DATA, header.Type)
 	}
 
-	buffer, err := readExactly(stream, int(header.Length))
+	buffer, err := netutil.ReadExactly(stream, int(header.Length))
 	if err != nil {
 		return DProxyEncryptedData{}, err
 	}
@@ -235,7 +220,7 @@ func ReadHeartbeat(stream net.Conn, header DProxyHeader) (DProxyHeartbeat, error
 		return DProxyHeartbeat{}, fmt.Errorf(ErrorUnexpectedType, HEARTBEAT, header.Type)
 	}
 
-	buffer, err := readExactly(stream, int(header.Length))
+	buffer, err := netutil.ReadExactly(stream, int(header.Length))
 	if err != nil {
 		return DProxyHeartbeat{}, err
 	}
@@ -257,7 +242,7 @@ func ReadHeartbeatResponse(stream net.Conn, header DProxyHeader) (DProxyHeartbea
 		return DProxyHeartbeatResponse{}, fmt.Errorf(ErrorUnexpectedType, HEARTBEAT_RESPONSE, header.Type)
 	}
 
-	buffer, err := readExactly(stream, int(header.Length))
+	buffer, err := netutil.ReadExactly(stream, int(header.Length))
 	if err != nil {
 		return DProxyHeartbeatResponse{}, err
 	}
@@ -281,7 +266,7 @@ func ReadError(stream net.Conn, header DProxyHeader) (DProxyErrorPacket, error) 
 		return DProxyErrorPacket{}, fmt.Errorf(ErrorUnexpectedType, ERROR, header.Type)
 	}
 
-	buffer, err := readExactly(stream, int(header.Length))
+	buffer, err := netutil.ReadExactly(stream, int(header.Length))
 	if err != nil {
 		return DProxyErrorPacket{}, err
 	}

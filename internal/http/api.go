@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package main
+package http
 
 import (
 	"crypto/x509"
@@ -24,15 +24,15 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/golang-jwt/jwt/v5"
+	"dproxy-server-go/internal/auth"
 
-	"dproxy-server-go/dproxy"
+	"github.com/golang-jwt/jwt/v5"
 )
 
-func getServerPublicKey(server *dproxy.Server, w http.ResponseWriter, _ *http.Request) {
-	derPublicKey, err := x509.MarshalPKIXPublicKey(server.PrivateKey.PublicKey())
+func (h *Handler) getServerPublicKey(w http.ResponseWriter, _ *http.Request) {
+	derPublicKey, err := x509.MarshalPKIXPublicKey(h.dproxyServer.PrivateKey.PublicKey())
 	if err != nil {
-		logger.Error("Error when encoding PEM block", "error", err)
+		h.logger.Error("Error when encoding PEM block", "error", err)
 		return
 	}
 
@@ -44,12 +44,12 @@ func getServerPublicKey(server *dproxy.Server, w http.ResponseWriter, _ *http.Re
 		},
 	)
 	if err != nil {
-		logger.Error("Error when encoding PEM block", "error", err)
+		h.logger.Error("Error when encoding PEM block", "error", err)
 		return
 	}
 }
 
-func uploadClientPublicKey(server *dproxy.Server, w http.ResponseWriter, r *http.Request) {
+func (h *Handler) uploadClientPublicKey(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Authorization") == "" ||
 		!strings.HasPrefix(r.Header.Get("Authorization"), "Bearer ") {
 		w.WriteHeader(http.StatusUnauthorized)
@@ -62,7 +62,7 @@ func uploadClientPublicKey(server *dproxy.Server, w http.ResponseWriter, r *http
 				return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 			}
 
-			return server.PrivateKey, nil
+			return h.dproxyServer.PrivateKey, nil
 		},
 	)
 
@@ -82,21 +82,21 @@ func uploadClientPublicKey(server *dproxy.Server, w http.ResponseWriter, r *http
 		return
 	}
 
-	clientDb, err := GetClientFromId(db, clientId)
+	clientDb, err := h.repo.GetClientByID(clientId)
 	if err != nil {
-		logger.Error("Error when getting client", "error", err)
+		h.logger.Error("Error when getting client", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
 	if clientDb == nil {
-		logger.Warn("Client not found", "username", clientId)
+		h.logger.Warn("Client not found", "username", clientId)
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
 
 	if !clientDb.Enabled {
-		logger.Warn("Client not enabled", "username", clientId)
+		h.logger.Warn("Client not enabled", "username", clientId)
 		w.WriteHeader(http.StatusForbidden)
 		return
 	}
@@ -104,22 +104,22 @@ func uploadClientPublicKey(server *dproxy.Server, w http.ResponseWriter, r *http
 	derPublicKey := make([]byte, 0)
 	_, err = r.Body.Read(derPublicKey)
 	if err != nil {
-		logger.Error("Error when reading request body", "error", err)
+		h.logger.Error("Error when reading request body", "error", err)
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
 
-	err = UploadClientPublicKey(db, clientDb, derPublicKey)
+	err = h.repo.CreatePublicKey(clientDb.Id, derPublicKey)
 	if err != nil {
-		logger.Error("Error when uploading client public key", "error", err)
+		h.logger.Error("Error when uploading client public key", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 	}
 
 	w.WriteHeader(http.StatusCreated)
 }
 
-func getCientsStats(server *dproxy.Server, w http.ResponseWriter, _ *http.Request) {
-	clients := dproxy.GetClientsStats(server)
+func (h *Handler) getClientsStats(w http.ResponseWriter, _ *http.Request) {
+	clients := h.dproxyServer.GetClientsStats()
 	b, err := json.Marshal(clients)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)

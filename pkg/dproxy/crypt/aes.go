@@ -27,13 +27,13 @@ func AESGCMEncrypt(cek []byte, iv []byte, plaintext []byte) ([]byte, []byte, err
 		return nil, nil, err
 	}
 
-	aesgcm, err := cipher.NewGCM(block)
+	aesGcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	var authenticationTag = make([]byte, 16)
-	ciphertext := aesgcm.Seal(nil, iv, plaintext, nil)
+	ciphertext := aesGcm.Seal(nil, iv, plaintext, nil)
 	copy(authenticationTag, ciphertext[len(plaintext):])
 
 	return ciphertext[0:len(plaintext)], authenticationTag, nil
@@ -45,13 +45,13 @@ func AESGCMDecrypt(cek []byte, iv []byte, ciphertext []byte, authenticationTag [
 		return nil, err
 	}
 
-	aesgcm, err := cipher.NewGCM(block)
+	aesGcm, err := cipher.NewGCM(block)
 	if err != nil {
 		return nil, err
 	}
 
 	cipherTextAuthTag := append(ciphertext, authenticationTag...)
-	plaintext, err := aesgcm.Open(nil, iv, cipherTextAuthTag, nil)
+	plaintext, err := aesGcm.Open(nil, iv, cipherTextAuthTag, nil)
 	if err != nil {
 		return nil, err
 	}

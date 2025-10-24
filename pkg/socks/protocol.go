@@ -6,26 +6,12 @@ import (
 	"net"
 	"net/netip"
 
-	"dproxy-server-go/socks/auth"
+	"dproxy-server-go/pkg/internal/netutil"
+	"dproxy-server-go/pkg/socks/auth"
 )
 
-func readExactly(stream net.Conn, expectedLength int) ([]byte, error) {
-	var buffer = make([]byte, expectedLength)
-	read := 0
-	for read < expectedLength {
-		n, err := stream.Read(buffer[read:])
-		if err != nil {
-			return nil, err
-		}
-
-		read += n
-	}
-
-	return buffer, nil
-}
-
 func ReadVersionIdentifier(stream net.Conn) (SocksVersionIdentifier, error) {
-	buffer, err := readExactly(stream, 2)
+	buffer, err := netutil.ReadExactly(stream, 2)
 	if err != nil {
 		return SocksVersionIdentifier{}, err
 	}
@@ -40,7 +26,7 @@ func ReadVersionIdentifier(stream net.Conn) (SocksVersionIdentifier, error) {
 		return SocksVersionIdentifier{}, errors.New("no auth method informed")
 	}
 
-	authBuffer, err := readExactly(stream, int(nmethods))
+	authBuffer, err := netutil.ReadExactly(stream, int(nmethods))
 	if err != nil {
 		return SocksVersionIdentifier{}, err
 	}
@@ -66,7 +52,7 @@ func SendMethodSelection(stream net.Conn, method SocksAuthMethod) error {
 }
 
 func ReadUsernameAuthRequest(stream net.Conn) (auth.UsernameAuthRequest, error) {
-	buffer, err := readExactly(stream, 2)
+	buffer, err := netutil.ReadExactly(stream, 2)
 	if err != nil {
 		return auth.UsernameAuthRequest{}, err
 	}
@@ -78,21 +64,21 @@ func ReadUsernameAuthRequest(stream net.Conn) (auth.UsernameAuthRequest, error) 
 
 	ulen := buffer[1]
 
-	buffer, err = readExactly(stream, int(ulen))
+	buffer, err = netutil.ReadExactly(stream, int(ulen))
 	if err != nil {
 		return auth.UsernameAuthRequest{}, err
 	}
 
 	uname := string(buffer)
 
-	buffer, err = readExactly(stream, 1)
+	buffer, err = netutil.ReadExactly(stream, 1)
 	if err != nil {
 		return auth.UsernameAuthRequest{}, err
 	}
 
 	plen := buffer[0]
 
-	buffer, err = readExactly(stream, int(plen))
+	buffer, err = netutil.ReadExactly(stream, int(plen))
 	if err != nil {
 		return auth.UsernameAuthRequest{}, err
 	}
@@ -100,9 +86,9 @@ func ReadUsernameAuthRequest(stream net.Conn) (auth.UsernameAuthRequest, error) 
 	passwd := string(buffer)
 
 	return auth.UsernameAuthRequest{
-		ver,
-		uname,
-		passwd,
+		Ver:    ver,
+		Uname:  uname,
+		Passwd: passwd,
 	}, nil
 }
 
@@ -116,7 +102,7 @@ func SendUsernameAuthReply(stream net.Conn, status auth.UsernameAuthReplyStatus)
 }
 
 func ReadRequest(stream net.Conn) (SocksRequest, error) {
-	buffer, err := readExactly(stream, 4)
+	buffer, err := netutil.ReadExactly(stream, 4)
 	if err != nil {
 		return SocksRequest{}, err
 	}
@@ -131,7 +117,7 @@ func ReadRequest(stream net.Conn) (SocksRequest, error) {
 	dstAddr := make([]byte, 0)
 	switch atyp {
 	case ADDR_IPV4:
-		buffer, err := readExactly(stream, 4)
+		buffer, err := netutil.ReadExactly(stream, 4)
 		if err != nil {
 			return SocksRequest{}, err
 		}
@@ -139,12 +125,12 @@ func ReadRequest(stream net.Conn) (SocksRequest, error) {
 		dstAddr = buffer
 		break
 	case ADDR_DOMAINNAME:
-		buffer, err := readExactly(stream, 1)
+		buffer, err := netutil.ReadExactly(stream, 1)
 		if err != nil {
 			return SocksRequest{}, err
 		}
 
-		buffer, err = readExactly(stream, int(buffer[0]))
+		buffer, err = netutil.ReadExactly(stream, int(buffer[0]))
 		if err != nil {
 			return SocksRequest{}, err
 		}
@@ -152,7 +138,7 @@ func ReadRequest(stream net.Conn) (SocksRequest, error) {
 		dstAddr = buffer
 		break
 	case ADDR_IPV6:
-		buffer, err := readExactly(stream, 16)
+		buffer, err := netutil.ReadExactly(stream, 16)
 		if err != nil {
 			return SocksRequest{}, err
 		}
@@ -161,7 +147,7 @@ func ReadRequest(stream net.Conn) (SocksRequest, error) {
 		break
 	}
 
-	buffer, err = readExactly(stream, 2)
+	buffer, err = netutil.ReadExactly(stream, 2)
 	if err != nil {
 		return SocksRequest{}, err
 	}

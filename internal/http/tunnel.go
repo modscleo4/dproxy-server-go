@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package main
+package http
 
 import (
 	"errors"
@@ -23,11 +23,11 @@ import (
 	"net/http"
 	"net/url"
 
-	"dproxy-server-go/dproxy"
+	"dproxy-server-go/internal/utils"
+	"dproxy-server-go/pkg/dproxy"
 )
 
-func handleHttpsTunnel(server *dproxy.Server, client *dproxy.Client, w http.ResponseWriter, r *http.Request) error {
-	// HTTPS Proxy
+func (h *Handler) handleHttpsTunnel(w http.ResponseWriter, r *http.Request, client *dproxy.Client) error {
 	uri, err := url.Parse(fmt.Sprintf("https:%s", r.URL.String()))
 	if err != nil {
 		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
@@ -37,7 +37,7 @@ func handleHttpsTunnel(server *dproxy.Server, client *dproxy.Client, w http.Resp
 
 	destination := uri.Hostname()
 	port := dproxy.IntOr(uri.Port(), 443)
-	connectionId, err := dproxy.ConnectTo(client, destination, uint16(port), 30)
+	connectionId, err := client.ConnectTo(destination, uint16(port), 30)
 	if err != nil {
 		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
 		w.WriteHeader(http.StatusGatewayTimeout)
@@ -59,43 +59,42 @@ func handleHttpsTunnel(server *dproxy.Server, client *dproxy.Client, w http.Resp
 		return err
 	}
 
-	logger.Debug("Tunnel established")
-	dproxy.SetConnectionStream(client, connectionId, &clientConn)
+	h.logger.Debug("Tunnel established")
+	client.SetConnectionStream(connectionId, &clientConn)
 	go func() {
 		for {
 			buffer := make([]byte, 32768)
 			bytesRead, err := clientConn.Read(buffer)
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				logger.Debug("HTTPS Client disconnected", "username", client.Id)
+				h.logger.Debug("HTTPS Client disconnected", "username", client.Id)
 				break
 			} else if err != nil {
-				logger.Error("Error when reading the HTTP connection", "error", err)
+				h.logger.Error("Error when reading the HTTP connection", "error", err)
 				break
 			}
 
-			err = dproxy.WriteData(client, connectionId, buffer[:bytesRead])
+			err = client.WriteData(connectionId, buffer[:bytesRead])
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				logger.Debug("DProxyClient disconnected", "username", client.Id)
+				h.logger.Debug("DProxyClient disconnected", "username", client.Id)
 				break
 			}
 		}
 
-		err := dproxy.DisconnectFrom(client, connectionId)
+		err := client.DisconnectFrom(connectionId)
 		if err != nil {
-			logger.Error("Error when disconnecting from destination", "error", err)
+			h.logger.Error("Error when disconnecting from destination", "error", err)
 		}
 
 		err = clientConn.Close()
 		if err != nil {
-			logger.Error("Error when closing http connection", "error", err)
+			h.logger.Error("Error when closing http connection", "error", err)
 		}
 	}()
 
 	return nil
 }
 
-func handleHttpTunnel(server *dproxy.Server, client *dproxy.Client, w http.ResponseWriter, r *http.Request) error {
-	// HTTP Proxy
+func (h *Handler) handleHttpTunnel(w http.ResponseWriter, r *http.Request, client *dproxy.Client) error {
 	uri, err := url.Parse(r.URL.String())
 	if err != nil {
 		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
@@ -106,14 +105,14 @@ func handleHttpTunnel(server *dproxy.Server, client *dproxy.Client, w http.Respo
 	destination := uri.Hostname()
 	port := dproxy.IntOr(uri.Port(), 80)
 	path := uri.Path
-	connectionId, err := dproxy.ConnectTo(client, destination, uint16(port), 30)
+	connectionId, err := client.ConnectTo(destination, uint16(port), 30)
 	if err != nil {
 		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
 		w.WriteHeader(http.StatusGatewayTimeout)
 		return err
 	}
 
-	err = dproxy.WriteData(client, connectionId, []byte(MountHttpData(r, path)))
+	err = client.WriteData(connectionId, []byte(utils.MountHttpData(r, path)))
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return err
@@ -133,35 +132,35 @@ func handleHttpTunnel(server *dproxy.Server, client *dproxy.Client, w http.Respo
 		return err
 	}
 
-	logger.Debug("Tunnel established")
-	dproxy.SetConnectionStream(client, connectionId, &clientConn)
+	h.logger.Debug("Tunnel established")
+	client.SetConnectionStream(connectionId, &clientConn)
 	go func() {
 		for {
 			buffer := make([]byte, 32768)
 			bytesRead, err := clientConn.Read(buffer)
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				logger.Debug("HTTP Client disconnected", "username", client.Id)
+				h.logger.Debug("HTTP Client disconnected", "username", client.Id)
 				break
 			} else if err != nil {
-				logger.Error("Error when reading the HTTP connection", "error", err)
+				h.logger.Error("Error when reading the HTTP connection", "error", err)
 				break
 			}
 
-			err = dproxy.WriteData(client, connectionId, buffer[:bytesRead])
+			err = client.WriteData(connectionId, buffer[:bytesRead])
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
-				logger.Debug("DProxyClient disconnected", "username", client.Id)
+				h.logger.Debug("DProxyClient disconnected", "username", client.Id)
 				break
 			}
 		}
 
-		err := dproxy.DisconnectFrom(client, connectionId)
+		err := client.DisconnectFrom(connectionId)
 		if err != nil {
-			logger.Error("Error when disconnecting from destination", "error", err)
+			h.logger.Error("Error when disconnecting from destination", "error", err)
 		}
 
 		err = clientConn.Close()
 		if err != nil {
-			logger.Error("Error when closing connection", "error", err)
+			h.logger.Error("Error when closing connection", "error", err)
 		}
 	}()
 
