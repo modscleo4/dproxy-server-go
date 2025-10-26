@@ -155,7 +155,6 @@ func (s *Server) startHeartbeatTicker(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			s.logger.Debug("Sending heartbeat to all clients")
 			s.dproxyServer.SendHeartbeatToClients()
 		}
 	}

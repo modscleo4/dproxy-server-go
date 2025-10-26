@@ -23,11 +23,92 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"dproxy-server-go/internal/auth"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
+
+type AuthTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int    `json:"expires_in"`
+}
+
+func (h *Handler) generateToken(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		GrantType    string `json:"grant_type"`
+		Username     string `json:"username"`
+		Password     string `json:"password"`
+		ClientId     string `json:"client_id"`
+		ClientSecret string `json:"client_secret"`
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&payload)
+	if err != nil {
+		h.logger.Error("Could not unmarshal JSON", "error", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if payload.GrantType != "password" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if payload.Username == "" || payload.Password == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	user, err := h.repo.GetUserByUsername(payload.Username)
+	if err != nil {
+		h.logger.Error("Invalid username", "error", err, "username", payload.Username)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if check, err := auth.PasswordVerify(user.Password, payload.Password); !check || err != nil {
+		h.logger.Error("Invalid password", "error", err)
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.RegisteredClaims{
+		Issuer:    "dproxy-server",
+		ID:        uuid.Must(uuid.NewRandom()).String(),
+		Subject:   payload.Username,
+		ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	})
+
+	tokenString, err := token.SignedString(h.dproxyServer.PrivateKey)
+	if err != nil {
+		h.logger.Error("Error when signing JWT", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	tokenResponse := AuthTokenResponse{
+		AccessToken: tokenString,
+		TokenType:   "Bearer",
+		ExpiresIn:   3600,
+	}
+
+	b, err := json.Marshal(tokenResponse)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, err = w.Write(b)
+	if err != nil {
+		return
+	}
+}
 
 func (h *Handler) getServerPublicKey(w http.ResponseWriter, _ *http.Request) {
 	derPublicKey, err := x509.MarshalPKIXPublicKey(h.dproxyServer.PrivateKey.PublicKey())
