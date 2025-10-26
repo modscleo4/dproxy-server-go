@@ -28,6 +28,21 @@ func NewHandler(server *dproxy.Server, repo *database.Repository, httpPassword s
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "OPTIONS" && strings.HasPrefix(r.URL.Path, "/") {
+		w.WriteHeader(http.StatusOK)
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, *")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+		w.Header().Set("Access-Control-Allow-Credentials", "true")
+		return
+	}
+
+	if r.Method == "POST" && r.URL.Path == "/oauth/token" {
+		h.generateToken(w, r)
+		return
+	}
+
 	if r.Method == "GET" && r.URL.Path == "/key-exchange" {
 		h.getServerPublicKey(w, r)
 		return

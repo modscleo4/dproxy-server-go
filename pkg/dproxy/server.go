@@ -243,6 +243,8 @@ func (server *Server) SendHeartbeatToClients() {
 		return
 	}
 
+	server.logger.Debug("Sending heartbeat to clients")
+
 	server.lock.RLock()
 	for _, client := range server.clients {
 		_, err := SendHeartbeat(*client.Conn, uint64(time.Now().UTC().UnixMilli()))

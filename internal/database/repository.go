@@ -58,6 +58,17 @@ func (r *Repository) Close() error {
 	return sqlDB.Close()
 }
 
+func (r *Repository) GetUserByUsername(username string) (*User, error) {
+	var user User
+	if err := r.db.Where("username = ?", username).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, apperrors.ErrNotFound
+		}
+		return nil, err
+	}
+	return &user, nil
+}
+
 func (r *Repository) GetClientByPublicKey(derPublicKey []byte) (*PublicKey, error) {
 	var publicKey PublicKey
 	if err := r.db.Preload("Client").Where("key = ?", derPublicKey).First(&publicKey).Error; err != nil {
