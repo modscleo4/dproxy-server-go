@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"net"
 
-	"dproxy-server-go/pkg/internal/netutil"
+	"dproxy-server-go/pkg/netutil"
 )
 
 func serializePacket(header DProxyHeader, data []byte) []byte {
@@ -271,17 +271,17 @@ func ReadError(stream net.Conn, header DProxyHeader) (DProxyErrorPacket, error) 
 		return DProxyErrorPacket{}, err
 	}
 
-	var messageLength = binary.BigEndian.Uint16(buffer[0:2])
-	var message = string(buffer[2 : 2+messageLength])
+	messageLength := binary.BigEndian.Uint16(buffer[0:2])
+	message := string(buffer[2 : 2+messageLength])
 
 	return DProxyErrorPacket{header, message}, nil
 }
 
 func SendError(stream net.Conn, errorCode DProxyError, message string) (int, error) {
-	var buffer = make([]byte, 1+len(message))
-	buffer[0] = byte(errorCode)
-	copy(buffer[1:], message)
+	var buffer = make([]byte, 2+len(message))
+	binary.BigEndian.PutUint16(buffer[0:2], uint16(len(message)))
+	copy(buffer[2:], message)
 
-	var header = DProxyHeader{1, ERROR, uint16(1 + len(message)), errorCode}
+	var header = DProxyHeader{1, ERROR, uint16(2 + len(message)), errorCode}
 	return stream.Write(serializePacket(header, buffer))
 }

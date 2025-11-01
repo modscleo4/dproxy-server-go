@@ -39,6 +39,7 @@ func PasswordHash(data string, salt []byte, cost int) (string, error) {
 }
 
 func PasswordVerify(hashData string, data string) (bool, error) {
+	// $version$cost$salt$hash
 	parts := strings.SplitN(hashData, "$", 5)
 	if len(parts) != 5 {
 		return false, errors.New("invalid hash format")
@@ -49,15 +50,24 @@ func PasswordVerify(hashData string, data string) (bool, error) {
 		return false, err
 	}
 
-	salt, err := base64.StdEncoding.DecodeString(parts[2])
+	if version != 7 {
+		return false, fmt.Errorf("unsupported hash version: %d", version)
+	}
+
+	cost, err := strconv.Atoi(parts[2])
 	if err != nil {
 		return false, err
 	}
 
-	computedHash, err := PasswordHash(data, salt, version)
+	salt, err := base64.StdEncoding.DecodeString(parts[3])
 	if err != nil {
 		return false, err
 	}
 
-	return subtle.ConstantTimeCompare([]byte(hashData), []byte(computedHash)) == 0, nil
+	computedHash, err := PasswordHash(data, salt, cost)
+	if err != nil {
+		return false, err
+	}
+
+	return subtle.ConstantTimeCompare([]byte(hashData), []byte(computedHash)) == 1, nil
 }

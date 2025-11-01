@@ -256,5 +256,13 @@ func (server *Server) SendHeartbeatToClients() {
 }
 
 func (server *Server) CloseAll() {
+	for _, client := range server.clients {
+		conn := *client.Conn
+		err := conn.Close()
+		if err != nil {
+			server.logger.Error("Error when closing client connection", "username", client.Id, "error", err)
+		}
+	}
+
 	clear(server.clients)
 }

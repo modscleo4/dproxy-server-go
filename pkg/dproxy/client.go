@@ -17,6 +17,7 @@
 package dproxy
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -182,7 +183,7 @@ func (client *Client) ReadClientData() error {
 		}
 
 		client.logger.Error("Received error from client", "errorCode", packet.ErrorCode, "message", packet.Message)
-		return fmt.Errorf(packet.Message)
+		return errors.New(packet.Message)
 	default:
 		_, err := SendError(conn, INVALID_PACKET_TYPE, "Invalid packet type")
 		if err != nil {
