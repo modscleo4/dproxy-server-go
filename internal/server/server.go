@@ -22,7 +22,6 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 
 	"dproxy-server-go/internal/database"
@@ -35,7 +34,6 @@ type Server struct {
 	dproxyServer *dproxy.Server
 	repo         *database.Repository
 	logger       *slog.Logger
-	wg           sync.WaitGroup
 }
 
 func New(config *Config) (*Server, error) {
@@ -64,8 +62,6 @@ func New(config *Config) (*Server, error) {
 }
 
 func (s *Server) Start(ctx context.Context) error {
-	s.wg.Add(4)
-
 	go s.startHTTPServer(ctx)
 	go s.startDProxyServer(ctx)
 	go s.startSocksServer(ctx)
@@ -74,7 +70,6 @@ func (s *Server) Start(ctx context.Context) error {
 	// Wait for interrupt
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
-
 	select {
 	case <-sigCh:
 		s.logger.Info("Shutdown signal received")
@@ -88,13 +83,13 @@ func (s *Server) Start(ctx context.Context) error {
 func (s *Server) Shutdown() error {
 	s.logger.Info("Shutting down server...")
 
-	if err := s.repo.Close(); err == nil {
+	err := s.repo.Close()
+	if err != nil {
 		s.logger.Error("Error closing database", "error", err)
 	}
 
 	s.dproxyServer.CloseAll()
 
-	s.wg.Wait()
 	return nil
 }
 

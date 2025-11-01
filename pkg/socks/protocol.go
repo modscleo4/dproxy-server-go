@@ -6,7 +6,7 @@ import (
 	"net"
 	"net/netip"
 
-	"dproxy-server-go/pkg/internal/netutil"
+	"dproxy-server-go/pkg/netutil"
 	"dproxy-server-go/pkg/socks/auth"
 )
 

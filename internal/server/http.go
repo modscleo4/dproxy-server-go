@@ -19,7 +19,6 @@ package server
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
 
 	apphttp "dproxy-server-go/internal/http"
@@ -33,7 +32,7 @@ func (s *Server) startHTTPServer(ctx context.Context) {
 		Handler: proxyHandler,
 	}
 
-	slog.Debug("Starting HTTP server", "address", httpServer.Addr, "port", s.config.Server.HTTPPort, "bindAddress", s.config.Server.BindAddress)
+	s.logger.Debug("Starting HTTP server", "address", httpServer.Addr, "port", s.config.Server.HTTPPort, "bindAddress", s.config.Server.BindAddress)
 	if err := httpServer.ListenAndServe(); err != nil {
 		s.logger.Error("Error when starting HTTP server", "error", err)
 		return

@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -182,8 +183,7 @@ func (h *Handler) uploadClientPublicKey(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	derPublicKey := make([]byte, 0)
-	_, err = r.Body.Read(derPublicKey)
+	derPublicKey, err := io.ReadAll(r.Body)
 	if err != nil {
 		h.logger.Error("Error when reading request body", "error", err)
 		w.WriteHeader(http.StatusBadRequest)
