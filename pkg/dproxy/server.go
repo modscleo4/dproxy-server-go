@@ -41,7 +41,7 @@ type Server struct {
 
 var encryptData = true
 
-func NewServer(privateKeyPath string) (*Server, error) {
+func NewServer(privateKeyPath string, doEncryptData bool) (*Server, error) {
 	privateKeyFile, err := os.ReadFile(privateKeyPath)
 	if err != nil {
 		return nil, err
@@ -61,6 +61,8 @@ func NewServer(privateKeyPath string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	encryptData = doEncryptData
 
 	return &Server{
 		PrivateKey: ecdhPrivateKey,

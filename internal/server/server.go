@@ -43,7 +43,7 @@ func New(config *Config) (*Server, error) {
 		return nil, fmt.Errorf("key file not found: %s (generate with: openssl ecparam -genkey -name prime256v1 -out private.pem)", config.Server.KeyPath)
 	}
 
-	dproxyServer, err := dproxy.NewServer(config.Server.KeyPath)
+	dproxyServer, err := dproxy.NewServer(config.Server.KeyPath, config.DProxy.EncryptData)
 	if err != nil {
 		return nil, err
 	}

@@ -27,6 +27,7 @@ type Config struct {
 	Database DatabaseConfig
 	Server   ServerConfig
 	Auth     AuthConfig
+	DProxy   DProxyConfig
 	Logging  LoggingConfig
 }
 
@@ -44,6 +45,10 @@ type ServerConfig struct {
 
 type AuthConfig struct {
 	HTTPPassword string
+}
+
+type DProxyConfig struct {
+	EncryptData bool
 }
 
 type LoggingConfig struct {
@@ -66,6 +71,9 @@ func LoadConfig() (*Config, error) {
 
 	// Auth
 	flag.StringVar(&cfg.Auth.HTTPPassword, "http-password", getenvOr("HTTP_PASSWORD", "__SUPER_SECRET_PASSWORD__"), "HTTP Password")
+
+	// DProxy
+	flag.BoolVar(&cfg.DProxy.EncryptData, "dproxy-encrypt", true, "Enable data encryption for DProxy connections")
 
 	// Logging
 	logLevel := flag.String("log-level", "info", "Log level")
