@@ -62,6 +62,7 @@ type DProxyHeader struct {
 type DProxyHandshakeInit struct {
 	DProxyHeader
 	DERPublicKey []byte
+	Hello        string
 }
 
 type DProxyHandshakeResponse struct {
@@ -92,6 +93,7 @@ type DProxyConnected struct {
 	DProxyHeader
 	ConnectionId uint32
 	Address      string
+	Port         uint16
 }
 
 type DProxyDisconnect struct {

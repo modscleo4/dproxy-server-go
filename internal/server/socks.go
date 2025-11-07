@@ -135,7 +135,7 @@ func (s *Server) handleSocksClient(conn net.Conn) {
 		return
 	}
 
-	err = socks.SendReply(conn, socks.REPLY_SUCCEEDED, *bindAddr, request.DstPort)
+	err = socks.SendReply(conn, socks.REPLY_SUCCEEDED, bindAddr.Addr(), bindAddr.Port())
 	if err != nil {
 		s.logger.Error("Error when sending reply", "error", err)
 		return
@@ -148,6 +148,7 @@ func (s *Server) handleSocksClient(conn net.Conn) {
 		bytes, err := conn.Read(buffer)
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.ErrClosedPipe) {
+				s.logger.Debug("Remote connection closed", "error", err, "connectionId", connectionId)
 				break
 			}
 

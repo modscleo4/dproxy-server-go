@@ -39,7 +39,7 @@ type Client struct {
 	lock        sync.RWMutex
 	connections map[uint32]*net.Conn
 	connEvents  map[uint32]chan bool
-	connAddrs   map[uint32]*netip.Addr
+	connAddrs   map[uint32]*netip.AddrPort
 
 	logger *slog.Logger
 }
@@ -53,7 +53,7 @@ func NewClient(id string, cek []byte, conn *net.Conn) *Client {
 		lock:        sync.RWMutex{},
 		connections: make(map[uint32]*net.Conn),
 		connEvents:  make(map[uint32]chan bool),
-		connAddrs:   make(map[uint32]*netip.Addr),
+		connAddrs:   make(map[uint32]*netip.AddrPort),
 		logger:      slog.Default().WithGroup("dproxy.client"),
 	}
 }
@@ -82,10 +82,10 @@ func (client *Client) ReadClientData() error {
 			return err
 		}
 
-		client.logger.Debug("Connection established", "connectionId", packet.ConnectionId)
+		client.logger.Debug("Connection established", "connectionId", packet.ConnectionId, "bndAddr", packet.Address, "bndPort", packet.Port)
 		client.connEvents[packet.ConnectionId] <- true
 
-		ip, err := netip.ParseAddr(packet.Address)
+		ip, err := netip.ParseAddrPort(fmt.Sprintf("%s:%d", packet.Address, packet.Port))
 		if err != nil {
 			return err
 		}
@@ -288,7 +288,7 @@ func (client *Client) SetConnectionStream(connectionId uint32, conn *net.Conn) {
 	client.lock.Unlock()
 }
 
-func (client *Client) GetConnectionBindAddress(connectionId uint32) *netip.Addr {
+func (client *Client) GetConnectionBindAddress(connectionId uint32) *netip.AddrPort {
 	addr, ok := client.connAddrs[connectionId]
 	if !ok {
 		return nil

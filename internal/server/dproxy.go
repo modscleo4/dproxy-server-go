@@ -83,7 +83,7 @@ func (s *Server) handleDProxyClient(conn net.Conn) {
 		return
 	}
 
-	clientPublicKey, err := dproxy.StartHandshake(conn)
+	clientPublicKey, err := s.dproxyServer.StartHandshake(conn)
 	if err != nil {
 		s.logger.Error("Error when starting handshake", "error", err)
 		return
@@ -96,7 +96,7 @@ func (s *Server) handleDProxyClient(conn net.Conn) {
 	}
 
 	if publicKeyDb == nil {
-		s.logger.Debug("Client not found", "username", clientPublicKey)
+		s.logger.Debug("Client not found", "publicKey", clientPublicKey)
 		return
 	}
 

@@ -83,7 +83,7 @@ func validateHeader(header *DProxyHeader, expectedType DProxyPacketType) (DProxy
 	return NO_ERROR, nil
 }
 
-func StartHandshake(conn net.Conn) ([]byte, error) {
+func (server *Server) StartHandshake(conn net.Conn) ([]byte, error) {
 	header, err := GetPacketHeader(conn)
 	if err != nil {
 		return nil, err
@@ -111,6 +111,8 @@ func StartHandshake(conn net.Conn) ([]byte, error) {
 
 		return nil, fmt.Errorf("invalid public key")
 	}
+
+	server.logger.Info("Incoming connection", "hello", packet.Hello)
 
 	return packet.DERPublicKey, nil
 }

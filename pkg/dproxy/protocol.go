@@ -63,7 +63,10 @@ func ReadHandshakeInit(stream net.Conn, header DProxyHeader) (DProxyHandshakeIni
 	var keyLength = binary.BigEndian.Uint16(buffer[0:2])
 	var derPublicKey = buffer[2 : 2+keyLength]
 
-	return DProxyHandshakeInit{header, derPublicKey}, nil
+	var helloLength = binary.BigEndian.Uint16(buffer[2+keyLength:2+keyLength+2])
+	var hello = string(buffer[2+keyLength+2 : 2+keyLength+2+helloLength])
+
+	return DProxyHandshakeInit{header, derPublicKey, hello}, nil
 }
 
 func SendHandshakeResponse(stream net.Conn, iv []byte, ciphertext []byte, authenticationTag []byte) (int, error) {
@@ -126,7 +129,8 @@ func ReadConnected(stream net.Conn, header DProxyHeader) (DProxyConnected, error
 	var connectionId = binary.BigEndian.Uint32(buffer[0:4])
 	var addressLength = binary.BigEndian.Uint16(buffer[4:6])
 	var address = string(buffer[6 : 6+addressLength])
-	return DProxyConnected{header, connectionId, address}, nil
+	var port = binary.BigEndian.Uint16(buffer[6+addressLength:6+addressLength+2])
+	return DProxyConnected{header, connectionId, address, port}, nil
 }
 
 func SendDisconnect(stream net.Conn, connectionId uint32) (int, error) {
