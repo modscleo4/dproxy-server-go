@@ -102,6 +102,14 @@ func (client *Client) ReadClientData() error {
 		if channel, ok := client.connEvents[packet.ConnectionId]; ok {
 			channel <- false
 		}
+
+		if tcpConn, ok := client.connections[packet.ConnectionId]; ok {
+			err := (*tcpConn).Close()
+			if err != nil {
+				return err
+			}
+		}
+
 		delete(client.connections, packet.ConnectionId)
 		delete(client.connEvents, packet.ConnectionId)
 		delete(client.connAddrs, packet.ConnectionId)
@@ -220,6 +228,8 @@ func (client *Client) ConnectTo(destination string, port uint16, timeout int) (u
 	case <-time.After(time.Duration(timeout) * time.Second):
 		return 0, fmt.Errorf("connection %d timed out after %d seconds", connectionId, timeout)
 	}
+
+	delete(client.connEvents, connectionId)
 
 	return connectionId, nil
 }

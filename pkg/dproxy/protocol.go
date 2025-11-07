@@ -63,7 +63,7 @@ func ReadHandshakeInit(stream net.Conn, header DProxyHeader) (DProxyHandshakeIni
 	var keyLength = binary.BigEndian.Uint16(buffer[0:2])
 	var derPublicKey = buffer[2 : 2+keyLength]
 
-	var helloLength = binary.BigEndian.Uint16(buffer[2+keyLength:2+keyLength+2])
+	var helloLength = binary.BigEndian.Uint16(buffer[2+keyLength : 2+keyLength+2])
 	var hello = string(buffer[2+keyLength+2 : 2+keyLength+2+helloLength])
 
 	return DProxyHandshakeInit{header, derPublicKey, hello}, nil
@@ -129,7 +129,7 @@ func ReadConnected(stream net.Conn, header DProxyHeader) (DProxyConnected, error
 	var connectionId = binary.BigEndian.Uint32(buffer[0:4])
 	var addressLength = binary.BigEndian.Uint16(buffer[4:6])
 	var address = string(buffer[6 : 6+addressLength])
-	var port = binary.BigEndian.Uint16(buffer[6+addressLength:6+addressLength+2])
+	var port = binary.BigEndian.Uint16(buffer[6+addressLength : 6+addressLength+2])
 	return DProxyConnected{header, connectionId, address, port}, nil
 }
 
