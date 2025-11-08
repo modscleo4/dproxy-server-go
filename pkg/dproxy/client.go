@@ -204,13 +204,18 @@ func (client *Client) ReadClientData() error {
 	return nil
 }
 
-func (client *Client) ConnectTo(destination string, port uint16, timeout int) (uint32, error) {
+func (client *Client) ConnectTo(
+	destination string,
+	connectionType DProxyConnectionType,
+	port uint16,
+	timeout int,
+) (uint32, error) {
 	conn := *client.Conn
 	connectionId := client.nextConnId
 	client.nextConnId++
 
-	client.logger.Debug("Connecting to remote endpoint", "address", destination, "port", port, "connectionId", connectionId)
-	_, err := SendConnect(conn, connectionId, destination, port)
+	client.logger.Debug("Connecting to remote endpoint", "type", connectionType, "address", destination, "port", port, "connectionId", connectionId)
+	_, err := SendConnect(conn, connectionId, connectionType, destination, port)
 	if err != nil {
 		return 0, err
 	}

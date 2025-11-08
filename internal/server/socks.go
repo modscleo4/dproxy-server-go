@@ -18,6 +18,7 @@ package server
 
 import (
 	"context"
+	"dproxy-server-go/pkg/dproxy"
 	"errors"
 	"fmt"
 	"io"
@@ -45,7 +46,7 @@ func (s *Server) startSocksServer(ctx context.Context) {
 		}
 	}(listener)
 
-	s.logger.Info("Socks Server is running", "address", listener.Addr().String(), "port", s.config.Server.SocksPort)
+	s.logger.Info("SOCKS Server is running", "address", listener.Addr().String(), "port", s.config.Server.SocksPort)
 
 	for {
 		conn, err := listener.Accept()
@@ -60,6 +61,14 @@ func (s *Server) startSocksServer(ctx context.Context) {
 
 func (s *Server) handleSocksClient(conn net.Conn) {
 	s.logger.Debug("Connection from Socks", "remoteAddr", conn.RemoteAddr().String())
+
+	defer func(conn net.Conn) {
+		err := conn.Close()
+		if err != nil {
+			s.logger.Error("Error when closing SOCKS client connection", "error", err)
+			return
+		}
+	}(conn)
 
 	_, err := socks.ReadVersionIdentifier(conn)
 	if err != nil {
@@ -101,12 +110,22 @@ func (s *Server) handleSocksClient(conn net.Conn) {
 		return
 	}
 
-	if request.Cmd != socks.CMD_CONNECT {
-		err = socks.SendReply(conn, socks.REPLY_COMMAND_NOT_SUPPORTED, netip.IPv4Unspecified(), 0)
+	switch request.Cmd {
+	case socks.CMD_CONNECT:
+		s.handleSocksClientConnect(client, request, conn)
+		return
 	}
 
+	err = socks.SendReply(conn, socks.REPLY_COMMAND_NOT_SUPPORTED, netip.IPv4Unspecified(), 0)
+	if err != nil {
+		s.logger.Error("Error when reading request", "error", err)
+		return
+	}
+}
+
+func (s *Server) handleSocksClientConnect(client *dproxy.Client, request socks.SocksRequest, conn net.Conn) {
 	destination := socks.GetDestinationAsStr(request)
-	connectionId, err := client.ConnectTo(destination, request.DstPort, 30)
+	connectionId, err := client.ConnectTo(destination, dproxy.TCP, request.DstPort, 30)
 	if err != nil {
 		err = socks.SendReply(conn, socks.REPLY_TTL_EXPIRED, netip.IPv4Unspecified(), 0)
 		return
@@ -121,7 +140,7 @@ func (s *Server) handleSocksClient(conn net.Conn) {
 	})()
 
 	client.SetConnectionStream(connectionId, &conn)
-	if !s.dproxyServer.IsClientConnected(usernameAuthRequest.Uname) {
+	if !s.dproxyServer.IsClientConnected(client.Id) {
 		return
 	}
 
@@ -141,7 +160,7 @@ func (s *Server) handleSocksClient(conn net.Conn) {
 		return
 	}
 
-	s.logger.Info("Socks client connected", "username", usernameAuthRequest.Uname)
+	s.logger.Info("Socks client connected", "username", client.Id)
 
 	for {
 		buffer := make([]byte, 4096)

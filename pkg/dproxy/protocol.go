@@ -105,14 +105,21 @@ func SendHandshakeFinalized(stream net.Conn, Id string) (int, error) {
 	return stream.Write(serializePacket(header, buffer))
 }
 
-func SendConnect(stream net.Conn, connectionId uint32, destination string, port uint16) (int, error) {
-	var buffer = make([]byte, 4+2+len(destination)+2)
+func SendConnect(
+	stream net.Conn,
+	connectionId uint32,
+	connectionType DProxyConnectionType,
+	destination string,
+	port uint16,
+) (int, error) {
+	var buffer = make([]byte, 4+1+2+len(destination)+2)
 	binary.BigEndian.PutUint32(buffer[0:4], connectionId)
-	binary.BigEndian.PutUint16(buffer[4:6], uint16(len(destination)))
-	copy(buffer[6:], destination)
-	binary.BigEndian.PutUint16(buffer[6+len(destination):], port)
+	buffer[4] = byte(connectionType)
+	binary.BigEndian.PutUint16(buffer[5:7], uint16(len(destination)))
+	copy(buffer[7:], destination)
+	binary.BigEndian.PutUint16(buffer[7+len(destination):], port)
 
-	var header = DProxyHeader{1, CONNECT, uint16(4 + 2 + len(destination) + 2), NO_ERROR}
+	var header = DProxyHeader{1, CONNECT, uint16(4 + 1 + 2 + len(destination) + 2), NO_ERROR}
 	return stream.Write(serializePacket(header, buffer))
 }
 

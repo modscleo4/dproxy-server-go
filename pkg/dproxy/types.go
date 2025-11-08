@@ -52,6 +52,13 @@ const (
 	DECRYPT_FAILED
 )
 
+type DProxyConnectionType uint8
+
+const (
+	TCP DProxyConnectionType = iota
+	UDP
+)
+
 type DProxyHeader struct {
 	Version   uint8
 	Type      DProxyPacketType
@@ -84,9 +91,10 @@ type DProxyHandshakeFinalized struct {
 
 type DProxyConnect struct {
 	DProxyHeader
-	ConnectionId uint32
-	Destination  string
-	Port         uint16
+	ConnectionId   uint32
+	ConnectionType DProxyConnectionType
+	Destination    string
+	Port           uint16
 }
 
 type DProxyConnected struct {
