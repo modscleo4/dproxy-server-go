@@ -83,12 +83,13 @@ func (s *Server) handleDProxyClient(conn net.Conn) {
 		return
 	}
 
-	clientPublicKey, err := s.dproxyServer.StartHandshake(conn)
+	handshakeInit, err := s.dproxyServer.StartHandshake(conn)
 	if err != nil {
 		s.logger.Error("Error when starting handshake", "error", err)
 		return
 	}
 
+	clientPublicKey := handshakeInit.DERPublicKey
 	publicKeyDb, err := s.repo.GetClientByPublicKey(clientPublicKey)
 	if err != nil {
 		s.logger.Error("Error when authenticating client", "error", err)
@@ -96,7 +97,7 @@ func (s *Server) handleDProxyClient(conn net.Conn) {
 	}
 
 	if publicKeyDb == nil {
-		s.logger.Debug("Client not found", "publicKey", clientPublicKey)
+		s.logger.Debug("Client not found", "publicKey", handshakeInit)
 		return
 	}
 
@@ -119,7 +120,7 @@ func (s *Server) handleDProxyClient(conn net.Conn) {
 
 	s.logger.Debug("Crypt info", "sharedSecret", hex.EncodeToString(sharedSecret), "cek", hex.EncodeToString(cek))
 
-	client := dproxy.NewClient(publicKeyDb.Client.Id, cek, &conn)
+	client := dproxy.NewClient(publicKeyDb.Client.Id, handshakeInit.Hello, cek, &conn)
 
 	err = s.dproxyServer.AcceptConnection(client)
 	if err != nil {

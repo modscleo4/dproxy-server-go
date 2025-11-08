@@ -83,7 +83,7 @@ func validateHeader(header *DProxyHeader, expectedType DProxyPacketType) (DProxy
 	return NO_ERROR, nil
 }
 
-func (server *Server) StartHandshake(conn net.Conn) ([]byte, error) {
+func (server *Server) StartHandshake(conn net.Conn) (*DProxyHandshakeInit, error) {
 	header, err := GetPacketHeader(conn)
 	if err != nil {
 		return nil, err
@@ -114,7 +114,7 @@ func (server *Server) StartHandshake(conn net.Conn) ([]byte, error) {
 
 	server.logger.Info("Incoming connection", "hello", packet.Hello)
 
-	return packet.DERPublicKey, nil
+	return &packet, nil
 }
 
 func (server *Server) DeriveSharedSecret(derPublicKey []byte) ([]byte, error) {
@@ -220,19 +220,25 @@ func (server *Server) DisconnectClient(username string) {
 }
 
 type ClientStats struct {
-	Latency      time.Duration
-	BytesWritten uint64
-	BytesRead    uint64
+	Info         string        `json:"info"`
+	Latency      time.Duration `json:"latency"`
+	BytesWritten uint64        `json:"bytes_written"`
+	BytesRead    uint64        `json:"bytes_read"`
 }
 
-func (server *Server) GetClientsStats() map[string]ClientStats {
-	clients := make(map[string]ClientStats)
+func (server *Server) GetClientsStats() map[string][]ClientStats {
+	clients := make(map[string][]ClientStats)
 	for username, client := range server.clients {
-		clients[username] = ClientStats{
+		if _, ok := clients[username]; !ok {
+			clients[username] = make([]ClientStats, 0, 1)
+		}
+
+		clients[username] = append(clients[username], ClientStats{
+			Info:         client.hello,
 			Latency:      client.latency,
 			BytesWritten: client.bytesWrite,
 			BytesRead:    client.bytesRead,
-		}
+		})
 	}
 
 	return clients

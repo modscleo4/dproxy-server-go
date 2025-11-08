@@ -32,6 +32,7 @@ type Client struct {
 	Id          string
 	CEK         []byte
 	Conn        *net.Conn
+	hello       string
 	bytesWrite  uint64
 	bytesRead   uint64
 	latency     time.Duration
@@ -44,11 +45,12 @@ type Client struct {
 	logger *slog.Logger
 }
 
-func NewClient(id string, cek []byte, conn *net.Conn) *Client {
+func NewClient(id string, hello string, cek []byte, conn *net.Conn) *Client {
 	return &Client{
 		Id:          id,
 		CEK:         cek,
 		Conn:        conn,
+		hello:       hello,
 		nextConnId:  1,
 		lock:        sync.RWMutex{},
 		connections: make(map[uint32]*net.Conn),
