@@ -59,7 +59,7 @@ func LoadConfig() (*Config, error) {
 	cfg := &Config{}
 
 	// Database
-	flag.StringVar(&cfg.Database.Path, "db-path", getenvOr("DB_PATH", "./db"), "SQLite database path")
+	flag.StringVar(&cfg.Database.Path, "db-path", getenvOr("DB_PATH", "./db/dproxy.db"), "SQLite database path")
 
 	// Server
 	flag.StringVar(&cfg.Server.KeyPath, "key-path", getenvOr("KEY_PATH", "./keys/private.pem"), "EC private key path")

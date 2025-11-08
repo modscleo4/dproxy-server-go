@@ -19,7 +19,6 @@ package database
 import (
 	"errors"
 	"fmt"
-	"path"
 	"time"
 
 	apperrors "dproxy-server-go/internal/errors"
@@ -33,7 +32,7 @@ type Repository struct {
 }
 
 func New(dbPath string) (*Repository, error) {
-	db, err := gorm.Open(sqlite.Open(path.Join(dbPath, "dproxy.db")), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{})
 	if err != nil {
 		return nil, err
 	}
