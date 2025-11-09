@@ -76,7 +76,7 @@ func SendHandshakeResponse(stream net.Conn, iv []byte, ciphertext []byte, authen
 	copy(buffer[14:], ciphertext)
 	copy(buffer[14+len(ciphertext):], authenticationTag)
 
-	var header = DProxyHeader{1, HANDSHAKE_RESPONSE, uint16(14 + len(ciphertext) + len(authenticationTag)), NO_ERROR}
+	var header = DProxyHeader{1, HANDSHAKE_RESPONSE, uint16(len(buffer)), NO_ERROR}
 	return stream.Write(serializePacket(header, buffer))
 }
 
@@ -119,7 +119,7 @@ func SendConnect(
 	copy(buffer[7:], destination)
 	binary.BigEndian.PutUint16(buffer[7+len(destination):], port)
 
-	var header = DProxyHeader{1, CONNECT, uint16(4 + 1 + 2 + len(destination) + 2), NO_ERROR}
+	var header = DProxyHeader{1, CONNECT, uint16(len(buffer)), NO_ERROR}
 	return stream.Write(serializePacket(header, buffer))
 }
 
@@ -144,7 +144,7 @@ func SendDisconnect(stream net.Conn, connectionId uint32) (int, error) {
 	var buffer = make([]byte, 4)
 	binary.BigEndian.PutUint32(buffer[0:4], connectionId)
 
-	var header = DProxyHeader{1, DISCONNECT, 4, NO_ERROR}
+	var header = DProxyHeader{1, DISCONNECT, uint16(len(buffer)), NO_ERROR}
 	return stream.Write(serializePacket(header, buffer))
 }
 
@@ -185,7 +185,7 @@ func SendData(stream net.Conn, connectionId uint32, data []byte) (int, error) {
 	binary.BigEndian.PutUint16(buffer[4:6], uint16(len(data)))
 	copy(buffer[6:], data)
 
-	var header = DProxyHeader{1, DATA, 4 + 2 + uint16(len(data)), NO_ERROR}
+	var header = DProxyHeader{1, DATA, uint16(len(buffer)), NO_ERROR}
 	return stream.Write(serializePacket(header, buffer))
 }
 
@@ -222,7 +222,7 @@ func SendEncryptedData(
 	copy(buffer[18:], ciphertext)
 	copy(buffer[18+len(ciphertext):], authenticationTag)
 
-	var header = DProxyHeader{1, ENCRYPTED_DATA, 4 + 12 + 2 + uint16(len(ciphertext)+len(authenticationTag)), NO_ERROR}
+	var header = DProxyHeader{1, ENCRYPTED_DATA, uint16(len(buffer)), NO_ERROR}
 	return stream.Write(serializePacket(header, buffer))
 }
 
@@ -268,7 +268,7 @@ func SendHeartbeatResponse(stream net.Conn, timestampSender uint64, timestampRec
 	binary.BigEndian.PutUint64(buffer[0:8], timestampSender)
 	binary.BigEndian.PutUint64(buffer[8:16], timestampReceiver)
 
-	var header = DProxyHeader{1, HEARTBEAT_RESPONSE, 16, NO_ERROR}
+	var header = DProxyHeader{1, HEARTBEAT_RESPONSE, uint16(len(buffer)), NO_ERROR}
 	return stream.Write(serializePacket(header, buffer))
 }
 
@@ -293,6 +293,6 @@ func SendError(stream net.Conn, errorCode DProxyError, message string) (int, err
 	binary.BigEndian.PutUint16(buffer[0:2], uint16(len(message)))
 	copy(buffer[2:], message)
 
-	var header = DProxyHeader{1, ERROR, uint16(2 + len(message)), errorCode}
+	var header = DProxyHeader{1, ERROR, uint16(len(buffer)), errorCode}
 	return stream.Write(serializePacket(header, buffer))
 }

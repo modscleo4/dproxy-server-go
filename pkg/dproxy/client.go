@@ -74,7 +74,7 @@ func (client *Client) ReadClientData() error {
 			return err
 		}
 
-		return fmt.Errorf("invalid version")
+		return fmt.Errorf("invalid version %d", header.Version)
 	}
 
 	switch header.Type {
@@ -158,6 +158,7 @@ func (client *Client) ReadClientData() error {
 
 		plaintext, err := crypt.AESGCMDecrypt(client.CEK, packet.IV, packet.Ciphertext, packet.AuthenticationTag)
 		if err != nil {
+			_, _ = SendError(conn, DECRYPT_FAILED, err.Error())
 			return err
 		}
 
