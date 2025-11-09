@@ -101,7 +101,7 @@ func SendHandshakeFinalized(stream net.Conn, Id string) (int, error) {
 	binary.BigEndian.PutUint16(buffer[0:2], uint16(len(Id)))
 	copy(buffer[2:], Id)
 
-	var header = DProxyHeader{1, HANDSHAKE_FINALIZED, 0, NO_ERROR}
+	var header = DProxyHeader{1, HANDSHAKE_FINALIZED, uint16(2 + len(Id)), NO_ERROR}
 	return stream.Write(serializePacket(header, buffer))
 }
 
