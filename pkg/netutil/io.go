@@ -1,18 +1,16 @@
 package netutil
 
-import "net"
+import (
+	"io"
+	"net"
+)
 
 func ReadExactly(stream net.Conn, expectedLength int) ([]byte, error) {
 	var buffer = make([]byte, expectedLength)
-	read := 0
-	for read < expectedLength {
-		n, err := stream.Read(buffer[read:])
-		if err != nil {
-			return nil, err
-		}
-
-		read += n
+	n, err := io.ReadFull(stream, buffer)
+	if err != nil {
+		return nil, err
 	}
 
-	return buffer, nil
+	return buffer[:n], nil
 }

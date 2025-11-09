@@ -18,8 +18,6 @@ package server
 
 import (
 	"context"
-	"dproxy-server-go/internal/utils"
-	"dproxy-server-go/pkg/dproxy"
 	"errors"
 	"fmt"
 	"io"
@@ -28,6 +26,8 @@ import (
 	"net/netip"
 	"os"
 
+	"dproxy-server-go/internal/utils"
+	"dproxy-server-go/pkg/dproxy"
 	"dproxy-server-go/pkg/socks"
 	"dproxy-server-go/pkg/socks/auth"
 )
