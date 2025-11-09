@@ -79,7 +79,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		h.logger.Error("Error when handling proxy request", "error", err)
-		w.WriteHeader(http.StatusInternalServerError)
 	}
 }
 

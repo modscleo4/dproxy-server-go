@@ -18,6 +18,7 @@ package server
 
 import (
 	"context"
+	"dproxy-server-go/internal/utils"
 	"dproxy-server-go/pkg/dproxy"
 	"errors"
 	"fmt"
@@ -125,9 +126,9 @@ func (s *Server) handleSocksClient(conn net.Conn) {
 
 func (s *Server) handleSocksClientConnect(client *dproxy.Client, request socks.SocksRequest, conn net.Conn) {
 	destination := socks.GetDestinationAsStr(request)
-	connectionId, err := client.ConnectTo(destination, dproxy.TCP, request.DstPort, 30)
+	connectionId, err, isTimeout := client.ConnectTo(destination, dproxy.TCP, request.DstPort, 30)
 	if err != nil {
-		err = socks.SendReply(conn, socks.REPLY_TTL_EXPIRED, netip.IPv4Unspecified(), 0)
+		err = socks.SendReply(conn, utils.IIF(isTimeout, socks.REPLY_TTL_EXPIRED, socks.REPLY_HOST_UNREACHABLE), netip.IPv4Unspecified(), 0)
 		return
 	}
 

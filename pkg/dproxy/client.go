@@ -211,7 +211,7 @@ func (client *Client) ConnectTo(
 	connectionType DProxyConnectionType,
 	port uint16,
 	timeout int,
-) (uint32, error) {
+) (uint32, error, bool) {
 	conn := *client.Conn
 	connectionId := client.nextConnId
 	client.nextConnId++
@@ -219,7 +219,7 @@ func (client *Client) ConnectTo(
 	client.logger.Debug("Connecting to remote endpoint", "type", connectionType, "address", destination, "port", port, "connectionId", connectionId)
 	_, err := SendConnect(conn, connectionId, connectionType, destination, port)
 	if err != nil {
-		return 0, err
+		return 0, err, false
 	}
 
 	client.logger.Debug("Waiting for connection to be established", "connectionId", connectionId)
@@ -230,15 +230,15 @@ func (client *Client) ConnectTo(
 	select {
 	case res := <-client.connEvents[connectionId]:
 		if res == false {
-			return 0, fmt.Errorf("connection failed")
+			return 0, fmt.Errorf("connection %d failed", connectionId), false
 		}
 	case <-time.After(time.Duration(timeout) * time.Second):
-		return 0, fmt.Errorf("connection %d timed out after %d seconds", connectionId, timeout)
+		return 0, fmt.Errorf("connection %d timed out after %d seconds", connectionId, timeout), true
 	}
 
 	delete(client.connEvents, connectionId)
 
-	return connectionId, nil
+	return connectionId, nil, false
 }
 
 func (client *Client) DisconnectFrom(connectionId uint32) error {

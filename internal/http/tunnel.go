@@ -37,10 +37,10 @@ func (h *Handler) handleHttpsTunnel(w http.ResponseWriter, r *http.Request, clie
 
 	destination := uri.Hostname()
 	port := dproxy.IntOr(uri.Port(), 443)
-	connectionId, err := client.ConnectTo(destination, dproxy.TCP, uint16(port), 30)
+	connectionId, err, isTimeout := client.ConnectTo(destination, dproxy.TCP, uint16(port), 30)
 	if err != nil {
 		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
-		w.WriteHeader(http.StatusGatewayTimeout)
+		w.WriteHeader(utils.IIF(isTimeout, http.StatusGatewayTimeout, http.StatusServiceUnavailable))
 		return err
 	}
 
@@ -105,10 +105,10 @@ func (h *Handler) handleHttpTunnel(w http.ResponseWriter, r *http.Request, clien
 	destination := uri.Hostname()
 	port := dproxy.IntOr(uri.Port(), 80)
 	path := uri.Path
-	connectionId, err := client.ConnectTo(destination, dproxy.TCP, uint16(port), 30)
+	connectionId, err, isTimeout := client.ConnectTo(destination, dproxy.TCP, uint16(port), 30)
 	if err != nil {
 		w.Header().Set("Proxy-Authenticate", "Basic realm=\"dproxy\"")
-		w.WriteHeader(http.StatusGatewayTimeout)
+		w.WriteHeader(utils.IIF(isTimeout, http.StatusGatewayTimeout, http.StatusServiceUnavailable))
 		return err
 	}
 
